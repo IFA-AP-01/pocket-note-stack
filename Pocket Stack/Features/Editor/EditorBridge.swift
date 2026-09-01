@@ -25,6 +25,53 @@ final class EditorBridge {
             textView.didChangeText()
         }
     }
+    
+    func applyWrap(prefix: String, suffix: String) {
+        guard let textView else { return }
+        let selected = textView.selectedRange()
+        let text = (textView.string as NSString).substring(with: selected)
+        let replacement = prefix + text + suffix
+        if textView.shouldChangeText(in: selected, replacementString: replacement) {
+            textView.textStorage?.replaceCharacters(in: selected, with: replacement)
+            textView.didChangeText()
+            textView.setSelectedRange(NSRange(location: selected.location + prefix.count, length: selected.length))
+        }
+    }
+    
+    func togglePrefix(_ prefix: String) {
+        guard let textView else { return }
+        let source = textView.string as NSString
+        let selected = textView.selectedRange()
+        let lineRange = source.lineRange(for: NSRange(location: min(selected.location, source.length), length: 0))
+        var line = source.substring(with: lineRange)
+        let hasNewline = line.hasSuffix("\n")
+        if hasNewline { line.removeLast() }
+        
+        // Remove existing standard prefixes before applying new one
+        let existingPrefixes = ["# ", "## ", "### ", "* ", "- ", "1. ", "☐ ", "☑ "]
+        for ep in existingPrefixes {
+            if line.hasPrefix(ep) {
+                line.removeFirst(ep.count)
+                break
+            }
+        }
+        
+        let replacement = (prefix.isEmpty ? line : prefix + line) + (hasNewline ? "\n" : "")
+        if textView.shouldChangeText(in: lineRange, replacementString: replacement) {
+            textView.textStorage?.replaceCharacters(in: lineRange, with: replacement)
+            textView.didChangeText()
+        }
+    }
+    
+    func insertText(_ text: String) {
+        guard let textView else { return }
+        let selected = textView.selectedRange()
+        if textView.shouldChangeText(in: selected, replacementString: text) {
+            textView.textStorage?.replaceCharacters(in: selected, with: text)
+            textView.didChangeText()
+            textView.setSelectedRange(NSRange(location: selected.location + (text as NSString).length, length: 0))
+        }
+    }
 
     func beginDictation() {
         guard let textView, !isDictating else { return }

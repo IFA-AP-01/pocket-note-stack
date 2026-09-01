@@ -40,8 +40,22 @@ struct NoteTextView: NSViewRepresentable {
         guard let textView = scroll.documentView as? NSTextView else { return }
         context.coordinator.parent = self
         (textView as? FirstMouseTextView)?.onCommand = onCommand
-        if textView.string != text, !bridge.isDictating { textView.string = text }
+        let currentMarkdown = markdownString(from: textView)
+        if currentMarkdown != text, !bridge.isDictating { textView.string = text }
         applyStyle(textView)
+    }
+
+    func markdownString(from textView: NSTextView) -> String {
+        var result = ""
+        let attrString = textView.attributedString()
+        attrString.enumerateAttributes(in: NSRange(location: 0, length: attrString.length), options: []) { attrs, range, _ in
+            if let md = attrs[NSAttributedString.Key("MarkdownOriginal")] as? String {
+                result += md
+            } else {
+                result += (attrString.string as NSString).substring(with: range)
+            }
+        }
+        return result
     }
 
     private func applyStyle(_ textView: NSTextView) {
@@ -52,15 +66,69 @@ struct NoteTextView: NSViewRepresentable {
         guard markdown else { return }
         let full = NSRange(location: 0, length: (textView.string as NSString).length)
         textView.textStorage?.addAttributes([.font: font, .foregroundColor: NSColor(palette.ink)], range: full)
-        let patterns: [(String, NSFont)] = [
-            ("(?m)^#{1,6} .+$", NSFont.systemFont(ofSize: fontSize + 3, weight: .bold)),
-            ("\\*\\*[^*]+\\*\\*", NSFont.systemFont(ofSize: fontSize, weight: .bold)),
-            ("`[^`]+`", NSFont.monospacedSystemFont(ofSize: fontSize - 1, weight: .regular)),
+        let patterns: [(String, NSFont, NSColor?)] = [
+            ("(?m)^# .+$", NSFont.systemFont(ofSize: fontSize + 6, weight: .bold), nil),
+            ("(?m)^## .+$", NSFont.systemFont(ofSize: fontSize + 4, weight: .bold), nil),
+            ("(?m)^### .+$", NSFont.systemFont(ofSize: fontSize + 2, weight: .semibold), nil),
+            ("\\*\\*[^*]+\\*\\*", NSFont.systemFont(ofSize: fontSize, weight: .bold), nil),
+            ("\\*[^*]+\\*", NSFont.systemFont(ofSize: fontSize, weight: .regular), nil), // Italic doesn't have a reliable italic system font weight without font descriptor, but let's just make it italic
+            ("~~[^~]+~~", NSFont.systemFont(ofSize: fontSize), NSColor.tertiaryLabelColor),
+            ("`[^`]+`", NSFont.monospacedSystemFont(ofSize: fontSize - 1, weight: .regular), nil),
+            ("(?m)^[-*] .+$", NSFont.systemFont(ofSize: fontSize), nil),
+            ("(?m)^\\d+\\. .+$", NSFont.systemFont(ofSize: fontSize), nil),
+            ("(?m)^[-*] \\[[ xX]\\] .+$", NSFont.systemFont(ofSize: fontSize), nil)
         ]
-        for (pattern, styledFont) in patterns {
+        for (pattern, styledFont, styledColor) in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
             for match in regex.matches(in: textView.string, range: full) {
                 textView.textStorage?.addAttribute(.font, value: styledFont, range: match.range)
+                if let color = styledColor {
+                    textView.textStorage?.addAttribute(.foregroundColor, value: color, range: match.range)
+                }
+                
+                // For italic
+                if pattern == "\\*[^*]+\\*" {
+                    let descriptor = font.fontDescriptor.withSymbolicTraits(.italic) ?? font.fontDescriptor
+                    if let italicFont = NSFont(descriptor: descriptor, size: fontSize) {
+                        textView.textStorage?.addAttribute(.font, value: italicFont, range: match.range)
+                    }
+                }
+                // For strikethrough
+                if pattern == "~~[^~]+~~" {
+                    textView.textStorage?.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: match.range)
+                }
+            }
+        }
+        
+        // Handle Images ![Alt](filename.png)
+        let imagePattern = "!\\[.*?\\]\\(([^)]+)\\)"
+        guard let imgRegex = try? NSRegularExpression(pattern: imagePattern) else { return }
+        
+        let fullForImg = NSRange(location: 0, length: (textView.string as NSString).length)
+        let imgMatches = imgRegex.matches(in: textView.string, range: fullForImg).reversed()
+        for match in imgMatches {
+            if let pathRange = Range(match.range(at: 1), in: textView.string),
+               let fullRange = Range(match.range, in: textView.string) {
+                let filename = String(textView.string[pathRange])
+                let originalMarkdown = String(textView.string[fullRange])
+                if let image = AttachmentManager.shared.loadImage(named: filename) {
+                    let attachment = NSTextAttachment()
+                    let maxWidth: CGFloat = 300
+                    if image.size.width > maxWidth {
+                        let ratio = maxWidth / image.size.width
+                        attachment.bounds = CGRect(x: 0, y: 0, width: maxWidth, height: image.size.height * ratio)
+                    } else {
+                        attachment.bounds = CGRect(origin: .zero, size: image.size)
+                    }
+                    attachment.image = image
+                    
+                    let attachStr = NSMutableAttributedString(attachment: attachment)
+                    attachStr.addAttribute(NSAttributedString.Key("MarkdownOriginal"), value: originalMarkdown, range: NSRange(location: 0, length: 1))
+                    
+                    textView.textStorage?.beginEditing()
+                    textView.textStorage?.replaceCharacters(in: match.range, with: attachStr)
+                    textView.textStorage?.endEditing()
+                }
             }
         }
     }
@@ -71,7 +139,10 @@ struct NoteTextView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
+            let result = parent.markdownString(from: textView)
+            if parent.text != result {
+                parent.text = result
+            }
         }
     }
 }
@@ -97,6 +168,105 @@ final class FirstMouseTextView: NSTextView {
         default: super.keyDown(with: event)
         }
     }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command) {
+            switch event.charactersIgnoringModifiers {
+            case "a":
+                self.selectAll(nil)
+                return true
+            case "c":
+                self.copy(nil)
+                return true
+            case "v":
+                if event.modifierFlags.contains(.shift) {
+                    self.pasteAsPlainText(nil)
+                } else {
+                    self.paste(nil)
+                }
+                return true
+            case "x":
+                self.cut(nil)
+                return true
+            case "z":
+                if event.modifierFlags.contains(.shift) {
+                    self.undoManager?.redo()
+                } else {
+                    self.undoManager?.undo()
+                }
+                return true
+            default:
+                break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+    
+    override func paste(_ sender: Any?) {
+        let pasteboard = NSPasteboard.general
+        if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage], let image = images.first {
+            if let filename = AttachmentManager.shared.saveImage(image) {
+                let markdown = "![Image](\(filename))"
+                insertMarkdown(markdown)
+                return
+            }
+        }
+        
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], let url = urls.first {
+            if ["png", "jpg", "jpeg", "gif", "heic"].contains(url.pathExtension.lowercased()) {
+                if let filename = AttachmentManager.shared.saveFile(from: url) {
+                    let markdown = "![Image](\(filename))"
+                    insertMarkdown(markdown)
+                    return
+                }
+            }
+        }
+        super.paste(sender)
+    }
+    
+    private func insertMarkdown(_ text: String) {
+        if shouldChangeText(in: selectedRange(), replacementString: text) {
+            textStorage?.replaceCharacters(in: selectedRange(), with: text)
+            didChangeText()
+        }
+    }
+    
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let pasteboard = sender.draggingPasteboard
+        if pasteboard.canReadItem(withDataConformingToTypes: ["public.image", "public.file-url"]) {
+            return .copy
+        }
+        return super.draggingEntered(sender)
+    }
+    
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let pasteboard = sender.draggingPasteboard
+        
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], let url = urls.first {
+            if ["png", "jpg", "jpeg", "gif", "heic"].contains(url.pathExtension.lowercased()) {
+                if let filename = AttachmentManager.shared.saveFile(from: url) {
+                    let markdown = "![Image](\(filename))"
+                    insertMarkdown(markdown)
+                    return true
+                }
+            }
+        }
+        
+        if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage], let image = images.first {
+            if let filename = AttachmentManager.shared.saveImage(image) {
+                let markdown = "![Image](\(filename))"
+                insertMarkdown(markdown)
+                return true
+            }
+        }
+        
+        return super.performDragOperation(sender)
+    }
 }
 
-enum EditorCommand { case escape, toggleTask, togglePin, cycleColor, delete, archive, increaseFont, decreaseFont }
+enum EditorCommand { 
+    case escape, toggleTask, togglePin, cycleColor, delete, archive, increaseFont, decreaseFont 
+    case formatTitle, formatHeading, formatSubheading, formatBody, formatMonospaced
+    case formatBold, formatItalic, formatStrikethrough, formatUnderline
+    case formatBulletList, formatDashList, formatNumberList, formatCheckList
+    case insertTable, insertImage
+}
