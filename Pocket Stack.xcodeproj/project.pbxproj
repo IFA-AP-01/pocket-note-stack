@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D5A0C00130A0000100C0D3E1 /* MarkdownEngine in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00330A0000100C0D3E1 /* MarkdownEngine */; };
+		D5A0C00630A0000100C0D3E1 /* MarkdownEngineCodeBlocks in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */; };
+		D5A0C00730A0000100C0D3E1 /* MarkdownEngineLatex in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		6C64B50C3046758A003B51BA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +58,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D5A0C00130A0000100C0D3E1 /* MarkdownEngine in Frameworks */,
+				D5A0C00630A0000100C0D3E1 /* MarkdownEngineCodeBlocks in Frameworks */,
+				D5A0C00730A0000100C0D3E1 /* MarkdownEngineLatex in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +121,9 @@
 			);
 			name = "Pocket Stack";
 			packageProductDependencies = (
+				D5A0C00330A0000100C0D3E1 /* MarkdownEngine */,
+				D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */,
+				D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */,
 			);
 			productName = "Pocket Stack";
 			productReference = 6C64B4FC30467589003B51BA /* Pocket Stack.app */;
@@ -195,6 +207,9 @@
 			);
 			mainGroup = 6C64B4F330467589003B51BA;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6C64B4FD30467589003B51BA /* Products */;
 			projectDirPath = "";
@@ -404,6 +419,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Pocket Stack";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pocket Stack uses the microphone only while you dictate into a note.";
@@ -411,7 +428,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ifateam.Pocket-Stack";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -438,6 +456,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Pocket Stack";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Pocket Stack uses the microphone only while you dictate into a note.";
@@ -445,7 +465,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ifateam.Pocket-Stack";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -577,6 +598,35 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nodes-app/swift-markdown-engine";
+			requirement = {
+				kind = exactVersion;
+				version = 0.12.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D5A0C00330A0000100C0D3E1 /* MarkdownEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */;
+			productName = MarkdownEngine;
+		};
+		D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */;
+			productName = MarkdownEngineCodeBlocks;
+		};
+		D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */;
+			productName = MarkdownEngineLatex;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6C64B4F430467589003B51BA /* Project object */;
 }

@@ -10,7 +10,16 @@ final class DictationCoordinator {
 
     func start(noteID: UUID, bridge: EditorBridge, state: @escaping @MainActor (DictationState) -> Void) async throws {
         guard currentSession == nil else { return }
-        let engine: any DictationEngine = preferences.speechProvider == .appleOnDevice ? AppleDictationEngine() : GeminiLiveEngine()
+        let engine: any DictationEngine
+        switch preferences.speechProvider {
+        case .appleOnDevice:
+            guard #available(macOS 26.0, *) else {
+                throw DictationError.appleOnDeviceUnavailable
+            }
+            engine = AppleDictationEngine()
+        case .geminiLive:
+            engine = GeminiLiveEngine()
+        }
         let locale = preferences.speechProvider == .geminiLive && preferences.speechLocale == "auto" ? nil : preferences.speechLocale
         let session = try await engine.start(localeIdentifier: locale, deviceUID: preferences.microphoneUID)
         currentSession = session

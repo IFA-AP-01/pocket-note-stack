@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NoteEditorView: View {
     let noteID: UUID
@@ -20,7 +22,6 @@ struct NoteEditorView: View {
     private var note: Note? { model.note(id: noteID) }
     private var palette: NotePaletteColor { note.map(NotePalette.color(for:)) ?? NotePalette.color(0) }
     private var editableTitle: String { note?.customTitle ?? note?.title ?? "" }
-
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -64,7 +65,7 @@ struct NoteEditorView: View {
                     Image(systemName: dictationState == .idle ? "mic" : "stop.circle.fill")
                 }
                 .help(dictationState == .idle ? "Start dictation" : "Stop dictation")
-                Button { bridge.toggleTask() } label: { Image(systemName: "checklist") }
+                Button { handleCommand(.toggleTask) } label: { Image(systemName: "checklist") }
                     .disabled(bridge.isDictating)
                 
                 Button { showsFormatChooser.toggle() } label: {
@@ -100,11 +101,11 @@ struct NoteEditorView: View {
             Divider().overlay(palette.accent.opacity(0.45))
             NoteTextView(
                 text: $draft,
+                noteID: noteID,
                 bridge: bridge,
                 palette: palette,
                 fontName: preferences.noteFontName,
                 fontSize: preferences.noteFontSize,
-                markdown: preferences.markdownStyling,
                 onCommand: handleCommand
             )
         }
@@ -127,7 +128,10 @@ struct NoteEditorView: View {
             draft = note?.body ?? ""
             titleDraft = editableTitle
             usesCustomTitle = note?.customTitle != nil
-            Task { @MainActor in bridge.focus() }
+            Task { @MainActor in
+                await Task.yield()
+                bridge.focus()
+            }
         }
         .onChange(of: draft) { _, _ in
             guard !bridge.isDictating else { return }
@@ -228,10 +232,24 @@ struct NoteEditorView: View {
         case .insertTable:
             bridge.insertText("\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n")
         case .insertImage:
-            // Handled via paste or drop natively in FirstMouseTextView, but we could show a file picker here.
-            // For now, let's keep it simple.
-            break
+            insertImage()
+        case .insertLink: bridge.applyWrap(prefix: "[", suffix: "](https://)")
+        case .insertCodeBlock: bridge.applyWrap(prefix: "```\n", suffix: "\n```")
+        case .insertInlineMath: bridge.applyWrap(prefix: "$", suffix: "$")
+        case .insertDisplayMath: bridge.applyWrap(prefix: "$$\n", suffix: "\n$$")
         }
+    }
+
+    private func insertImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose an image to add to this note"
+        guard panel.runModal() == .OK,
+              let url = panel.url,
+              let filename = AttachmentManager.shared.saveFile(from: url) else { return }
+        bridge.insertText("![Image](\(filename))")
     }
 }
 
@@ -309,6 +327,12 @@ private struct FormattingChooserView: View {
                 Divider().frame(height: 16)
                 Button { onCommand(.insertTable) } label: { Image(systemName: "tablecells") }.help("Insert Table")
                 Button { onCommand(.insertImage) } label: { Image(systemName: "photo") }.help("Insert Image")
+            }
+            HStack(spacing: 16) {
+                Button { onCommand(.insertLink) } label: { Image(systemName: "link") }.help("Insert Link")
+                Button { onCommand(.insertCodeBlock) } label: { Image(systemName: "chevron.left.forwardslash.chevron.right") }.help("Insert Code Block")
+                Button { onCommand(.insertInlineMath) } label: { Image(systemName: "function") }.help("Insert Inline Math")
+                Button("∑ Block") { onCommand(.insertDisplayMath) }.help("Insert Display Math")
             }
         }
         .padding(16)

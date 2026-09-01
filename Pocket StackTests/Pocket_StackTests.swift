@@ -100,6 +100,20 @@ struct Pocket_StackTests {
         #expect(textView.isEditable)
     }
 
+    @Test @MainActor func editorTaskToggleKeepsMarkdownAsStorageFormat() {
+        let textView = NSTextView()
+        textView.string = "Buy milk"
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let bridge = EditorBridge()
+        bridge.textView = textView
+
+        bridge.toggleTask()
+        #expect(textView.string == "- [ ] Buy milk")
+
+        bridge.toggleTask()
+        #expect(textView.string == "- [x] Buy milk")
+    }
+
     @Test func pcmEncoderProducesOneHundredMillisecondChunks() {
         let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: false)!
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800)!

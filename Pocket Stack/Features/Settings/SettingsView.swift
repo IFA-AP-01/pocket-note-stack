@@ -75,13 +75,11 @@ private struct AppearanceSettingsView: View {
             Picker("Note size", selection: $preferences.noteSizeIndex) {
                 Text("Small").tag(0); Text("Medium").tag(1); Text("Large").tag(2); Text("Huge").tag(3)
             }
-            Toggle("Style Markdown while typing", isOn: $preferences.markdownStyling)
         }
         .formStyle(.grouped)
         .onChange(of: preferences.noteFontName) { _, _ in refresh() }
         .onChange(of: preferences.noteFontSize) { _, _ in refresh() }
         .onChange(of: preferences.noteSizeIndex) { _, _ in refresh() }
-        .onChange(of: preferences.markdownStyling) { _, _ in refresh() }
     }
 }
 
@@ -115,7 +113,7 @@ private struct SpeechSettingsView: View {
     var body: some View {
         Form {
             Picker("Provider", selection: $preferences.speechProvider) {
-                ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
+                ForEach(availableSpeechProviders) { Text($0.title).tag($0) }
             }
             Picker("Microphone", selection: Binding(
                 get: { preferences.microphoneUID ?? "" },
@@ -125,14 +123,16 @@ private struct SpeechSettingsView: View {
                 ForEach(devices) { Text($0.name).tag($0.uid) }
             }
             if preferences.speechProvider == .appleOnDevice {
-                TextField("Language / locale", text: $preferences.speechLocale)
-                HStack {
-                    Text("On-device model"); Spacer()
-                    Text(status.isEmpty ? "Checking…" : status).foregroundStyle(.secondary)
-                    Button("Check / Download") { checkAppleModel(download: true) }.disabled(isWorking)
+                if #available(macOS 26.0, *) {
+                    TextField("Language / locale", text: $preferences.speechLocale)
+                    HStack {
+                        Text("On-device model"); Spacer()
+                        Text(status.isEmpty ? "Checking…" : status).foregroundStyle(.secondary)
+                        Button("Check / Download") { checkAppleModel(download: true) }.disabled(isWorking)
+                    }
+                    Text("Audio stays on this Mac. Language assets may need to be downloaded once.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Audio stays on this Mac. Language assets may need to be downloaded once.")
-                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Picker("Language", selection: $preferences.speechLocale) {
                     Text("Auto detect").tag("auto"); Text("English").tag("en-US"); Text("Vietnamese").tag("vi-VN")
@@ -152,11 +152,23 @@ private struct SpeechSettingsView: View {
         .onAppear {
             devices = AudioDeviceManager.inputDevices()
             apiKey = (try? keychain.string(for: "gemini-api-key")) ?? ""
-            if preferences.speechProvider == .appleOnDevice { checkAppleModel(download: false) }
+            if #available(macOS 26.0, *), preferences.speechProvider == .appleOnDevice {
+                checkAppleModel(download: false)
+            }
         }
         .onChange(of: preferences.speechProvider) { _, provider in
             status = ""
-            if provider == .appleOnDevice { checkAppleModel(download: false) }
+            if #available(macOS 26.0, *), provider == .appleOnDevice {
+                checkAppleModel(download: false)
+            }
+        }
+    }
+
+    private var availableSpeechProviders: [SpeechProvider] {
+        if #available(macOS 26.0, *) {
+            SpeechProvider.allCases
+        } else {
+            [.geminiLive]
         }
     }
 
@@ -176,6 +188,7 @@ private struct SpeechSettingsView: View {
             isWorking = false
         }
     }
+    @available(macOS 26.0, *)
     private func checkAppleModel(download: Bool) {
         isWorking = true
         Task {

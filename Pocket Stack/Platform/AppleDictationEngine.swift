@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import Speech
 
+@available(macOS 26.0, *)
 struct AppleDictationEngine: DictationEngine {
     func start(localeIdentifier: String?, deviceUID: String?) async throws -> any DictationSession {
         try await AppleDictationSession.create(localeIdentifier: localeIdentifier, deviceUID: deviceUID)
@@ -15,6 +16,7 @@ struct AppleDictationEngine: DictationEngine {
     }
 }
 
+@available(macOS 26.0, *)
 final class AppleDictationSession: DictationSession, @unchecked Sendable {
     let events: AsyncThrowingStream<TranscriptEvent, Error>
     private let eventContinuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation
@@ -108,6 +110,7 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
 enum DictationError: LocalizedError {
     case unsupportedLocale(String)
     case audioFormatUnavailable
+    case appleOnDeviceUnavailable
     case missingAPIKey
     case invalidServerResponse
     case timedOut
@@ -116,6 +119,7 @@ enum DictationError: LocalizedError {
         switch self {
         case .unsupportedLocale(let locale): "Apple on-device dictation does not support \(locale)."
         case .audioFormatUnavailable: "No compatible microphone format is available."
+        case .appleOnDeviceUnavailable: "Apple on-device dictation requires macOS 26 or later."
         case .missingAPIKey: "Add a Gemini API key in Settings > Speech."
         case .invalidServerResponse: "Gemini returned an invalid response."
         case .timedOut: "The transcription service timed out."

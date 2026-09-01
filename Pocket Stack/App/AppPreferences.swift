@@ -30,7 +30,6 @@ final class AppPreferences {
     var noteFontSize: Double { didSet { defaults.set(noteFontSize, forKey: "note.fontSize") } }
     var noteFontName: String { didSet { defaults.set(noteFontName, forKey: "note.fontName") } }
     var noteSizeIndex: Int { didSet { defaults.set(noteSizeIndex, forKey: "note.size") } }
-    var markdownStyling: Bool { didSet { defaults.set(markdownStyling, forKey: "note.markdown") } }
     var speechProvider: SpeechProvider { didSet { defaults.set(speechProvider.rawValue, forKey: "speech.provider") } }
     var speechLocale: String { didSet { defaults.set(speechLocale, forKey: "speech.locale") } }
     var microphoneUID: String? { didSet { defaults.set(microphoneUID, forKey: "speech.microphone") } }
@@ -46,8 +45,12 @@ final class AppPreferences {
         noteFontSize = defaults.object(forKey: "note.fontSize") as? Double ?? 14
         noteFontName = defaults.string(forKey: "note.fontName") ?? "Noteworthy-Light"
         noteSizeIndex = defaults.object(forKey: "note.size") as? Int ?? 1
-        markdownStyling = defaults.object(forKey: "note.markdown") as? Bool ?? true
-        speechProvider = SpeechProvider(rawValue: defaults.string(forKey: "speech.provider") ?? "") ?? .appleOnDevice
+        let savedSpeechProvider = SpeechProvider(rawValue: defaults.string(forKey: "speech.provider") ?? "") ?? .appleOnDevice
+        if #available(macOS 26.0, *) {
+            speechProvider = savedSpeechProvider
+        } else {
+            speechProvider = .geminiLive
+        }
         speechLocale = defaults.string(forKey: "speech.locale") ?? Locale.current.identifier
         microphoneUID = defaults.string(forKey: "speech.microphone")
     }

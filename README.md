@@ -5,7 +5,7 @@ Pocket Stack is a native macOS 26+ note app whose notes live in a floating deck 
 ## Features
 
 - Rest, fan and expanded deck states on one or every connected display.
-- Encrypted local notes, inline Markdown styling, checkbox tasks, archive, search, pinning and drag reorder.
+- Encrypted local notes with one Typora-style live Markdown editor for GFM, LaTeX math, syntax-highlighted code, links, tables, tasks and images.
 - Global shortcuts: `⌥⌘N` new note, `⌥⌘A` all notes and `⌥⌘L` archive.
 - Markdown, text, combined-document and `.stickies` JSON import/export.
 - Realtime dictation at the current editor selection using either Apple on-device Speech or Gemini Live transcription.
@@ -33,6 +33,8 @@ Open `Pocket Stack.xcodeproj` in Xcode 26 or run:
 xcodebuild -project "Pocket Stack.xcodeproj" -scheme "Pocket Stack" -destination "platform=macOS" build
 xcodebuild -project "Pocket Stack.xcodeproj" -scheme "Pocket Stack" -destination "platform=macOS" -only-testing:"Pocket StackTests" test
 ```
+
+The native TextKit 2 Markdown editor is pinned to an exact package version for reproducible builds.
 
 Developer ID distribution should retain the sandbox entitlements, use a stable bundle identifier and be notarized. Release automation and an updater are intentionally outside this version.
 

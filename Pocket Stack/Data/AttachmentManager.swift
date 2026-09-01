@@ -49,7 +49,16 @@ final class AttachmentManager {
     }
     
     func loadImage(named filename: String) -> NSImage? {
-        let fileURL = attachmentsDirectory.appendingPathComponent(filename)
+        guard let fileURL = attachmentURL(named: filename) else { return nil }
         return NSImage(contentsOf: fileURL)
+    }
+
+    func attachmentURL(named filename: String) -> URL? {
+        guard !filename.isEmpty,
+              filename == (filename as NSString).lastPathComponent else { return nil }
+        let url = attachmentsDirectory.appendingPathComponent(filename).standardizedFileURL
+        guard url.deletingLastPathComponent() == attachmentsDirectory.standardizedFileURL,
+              fileManager.fileExists(atPath: url.path) else { return nil }
+        return url
     }
 }
