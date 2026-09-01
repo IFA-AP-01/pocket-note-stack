@@ -43,7 +43,7 @@ actor SQLiteNoteRepository: NoteRepository {
     }
 
     func load() throws -> [Note] {
-        let sql = "SELECT id,title,body,color,created,modified,archived,pinned,sort_order,custom_color FROM notes ORDER BY sort_order ASC;"
+        let sql = "SELECT id,title,body,color,created,modified,archived,pinned,sort_order,custom_color,custom_title FROM notes ORDER BY sort_order ASC;"
         var statement: OpaquePointer?
         try prepare(sql, into: &statement)
         defer { sqlite3_finalize(statement) }
@@ -56,6 +56,7 @@ actor SQLiteNoteRepository: NoteRepository {
             notes.append(Note(
                 id: id,
                 title: text(statement, 1),
+                customTitle: optionalText(statement, 10),
                 body: body,
                 colorIndex: Int(sqlite3_column_int(statement, 3)),
                 customColorHex: optionalText(statement, 9),
@@ -71,11 +72,11 @@ actor SQLiteNoteRepository: NoteRepository {
 
     func upsert(_ note: Note) throws {
         let sql = """
-        INSERT INTO notes (id,title,body,color,created,modified,archived,pinned,sort_order,custom_color)
-        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+        INSERT INTO notes (id,title,body,color,created,modified,archived,pinned,sort_order,custom_color,custom_title)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
         title=excluded.title,body=excluded.body,color=excluded.color,modified=excluded.modified,
         archived=excluded.archived,pinned=excluded.pinned,sort_order=excluded.sort_order,
-        custom_color=excluded.custom_color;
+        custom_color=excluded.custom_color,custom_title=excluded.custom_title;
         """
         var statement: OpaquePointer?
         try prepare(sql, into: &statement)
@@ -91,6 +92,7 @@ actor SQLiteNoteRepository: NoteRepository {
         sqlite3_bind_int(statement, 8, note.isPinned ? 1 : 0)
         sqlite3_bind_double(statement, 9, note.sortOrder)
         bindOptionalText(statement, 10, note.customColorHex)
+        bindOptionalText(statement, 11, note.customTitle)
         guard sqlite3_step(statement) == SQLITE_DONE else { throw currentError() }
         try publish()
     }
@@ -117,7 +119,7 @@ actor SQLiteNoteRepository: NoteRepository {
     }
 
     private func upsertWithoutPublish(_ note: Note) throws {
-        let sql = "INSERT OR REPLACE INTO notes (id,title,body,color,created,modified,archived,pinned,sort_order,custom_color) VALUES (?,?,?,?,?,?,?,?,?,?);"
+        let sql = "INSERT OR REPLACE INTO notes (id,title,body,color,created,modified,archived,pinned,sort_order,custom_color,custom_title) VALUES (?,?,?,?,?,?,?,?,?,?,?);"
         var statement: OpaquePointer?
         try prepare(sql, into: &statement)
         defer { sqlite3_finalize(statement) }
@@ -132,6 +134,7 @@ actor SQLiteNoteRepository: NoteRepository {
         sqlite3_bind_int(statement, 8, note.isPinned ? 1 : 0)
         sqlite3_bind_double(statement, 9, note.sortOrder)
         bindOptionalText(statement, 10, note.customColorHex)
+        bindOptionalText(statement, 11, note.customTitle)
         guard sqlite3_step(statement) == SQLITE_DONE else { throw currentError() }
     }
 
@@ -163,14 +166,18 @@ actor SQLiteNoteRepository: NoteRepository {
           archived INTEGER NOT NULL DEFAULT 0,
           pinned INTEGER NOT NULL DEFAULT 0,
           sort_order REAL NOT NULL DEFAULT 0,
-          custom_color TEXT
+          custom_color TEXT,
+          custom_title TEXT
         );
         """)
         if sqlite3_table_column_metadata(database, nil, "notes", "custom_color", nil, nil, nil, nil, nil) != SQLITE_OK {
             try run("ALTER TABLE notes ADD COLUMN custom_color TEXT;")
         }
+        if sqlite3_table_column_metadata(database, nil, "notes", "custom_title", nil, nil, nil, nil, nil) != SQLITE_OK {
+            try run("ALTER TABLE notes ADD COLUMN custom_title TEXT;")
+        }
         try run("CREATE INDEX IF NOT EXISTS idx_notes_archived_order ON notes(archived,sort_order);")
-        try run("PRAGMA user_version=2;")
+        try run("PRAGMA user_version=3;")
         return database
     }
 

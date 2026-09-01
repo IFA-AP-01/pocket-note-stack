@@ -10,20 +10,51 @@ struct NoteEditorView: View {
     let dictationState: DictationState
 
     @State private var draft = ""
+    @State private var titleDraft = ""
     @State private var saveTask: Task<Void, Never>?
+    @State private var usesCustomTitle = false
     @State private var showsColorChooser = false
     @State private var showsFormatChooser = false
+    @FocusState private var titleFocused: Bool
 
     private var note: Note? { model.note(id: noteID) }
     private var palette: NotePaletteColor { note.map(NotePalette.color(for:)) ?? NotePalette.color(0) }
+    private var editableTitle: String { note?.customTitle ?? note?.title ?? "" }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text(note?.displayTitle ?? "New note")
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.red.opacity(0.88)))
+                        .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+                }
+                .buttonStyle(.plain)
+                .disabled(bridge.isDictating)
+                .help("Close note")
+
+                TextField("New note", text: $titleDraft)
                     .font(.headline)
                     .lineLimit(1)
-                Spacer()
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 7)
+                    .frame(minWidth: 90, maxWidth: .infinity, minHeight: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(palette.ink.opacity(titleFocused ? 0.09 : 0.045))
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(titleFocused ? palette.accent.opacity(0.7) : .clear, lineWidth: 1)
+                    }
+                    .focused($titleFocused)
+                    .disabled(bridge.isDictating)
+                    .onSubmit { saveContent() }
+                    .onExitCommand(perform: close)
+                    .layoutPriority(1)
                 if dictationState != .idle {
                     Text(dictationLabel)
                         .font(.caption)
@@ -61,8 +92,6 @@ struct NoteEditorView: View {
                     .popover(isPresented: $showsColorChooser, arrowEdge: .top) {
                         NoteColorChooser(noteID: noteID, note: note, model: model, palette: palette)
                     }
-                Button(action: close) { Image(systemName: "xmark") }
-                    .disabled(bridge.isDictating)
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
@@ -94,17 +123,45 @@ struct NoteEditorView: View {
             x: preferences.edge == .right ? -5 : (preferences.edge == .left ? 5 : 0),
             y: preferences.edge == .bottom ? -5 : 5
         )
-        .onAppear { draft = note?.body ?? ""; Task { @MainActor in bridge.focus() } }
-        .onChange(of: draft) { _, value in
+        .onAppear {
+            draft = note?.body ?? ""
+            titleDraft = editableTitle
+            usesCustomTitle = note?.customTitle != nil
+            Task { @MainActor in bridge.focus() }
+        }
+        .onChange(of: draft) { _, _ in
             guard !bridge.isDictating else { return }
             saveTask?.cancel()
             saveTask = Task {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
-                model.updateBody(id: noteID, body: value)
+                persistContent()
             }
         }
-        .onDisappear { saveTask?.cancel(); model.updateBody(id: noteID, body: draft) }
+        .onChange(of: titleDraft) { _, value in
+            guard titleFocused else { return }
+            usesCustomTitle = !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            saveTask?.cancel()
+            saveTask = Task {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                persistContent()
+            }
+        }
+        .onChange(of: editableTitle) { _, value in
+            guard !titleFocused else { return }
+            titleDraft = value
+            usesCustomTitle = note?.customTitle != nil
+        }
+        .onChange(of: titleFocused) { _, focused in
+            if !focused {
+                saveContent()
+            }
+        }
+        .onDisappear {
+            saveTask?.cancel()
+            saveContent()
+        }
     }
 
     private var dictationLabel: String {
@@ -119,8 +176,21 @@ struct NoteEditorView: View {
 
     private func close() {
         saveTask?.cancel()
-        model.updateBody(id: noteID, body: draft)
+        saveContent()
         onClose()
+    }
+
+    private func saveContent() {
+        saveTask?.cancel()
+        persistContent()
+    }
+
+    private func persistContent() {
+        model.updateContent(
+            id: noteID,
+            body: draft,
+            customTitle: usesCustomTitle ? titleDraft : nil
+        )
     }
 
     private func handleCommand(_ command: EditorCommand) {

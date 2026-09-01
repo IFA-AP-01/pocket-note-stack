@@ -43,8 +43,6 @@ final class DeckController: NSObject {
     private let panel = DeckPanel()
     private var tracking: DeckTrackingView!
     private var hosting: FirstMouseHostingView<DeckRootView>!
-    private var idleTimer: Timer?
-    private var outsideMonitor: Any?
     private var shrinkWork: DispatchWorkItem?
     weak var coordinator: DeckCoordinator?
 
@@ -69,8 +67,6 @@ final class DeckController: NSObject {
     func invalidate() {
         shrinkWork?.cancel()
         restTransitionWork?.cancel()
-        idleTimer?.invalidate()
-        if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }
         panel.orderOut(nil)
     }
 
@@ -151,7 +147,10 @@ final class DeckController: NSObject {
     }
 
     func closeExpanded() { transition(.fan) }
-    func collapse() { if viewState.dictationState == .idle { transition(.rest) } }
+    func collapse() {
+        guard viewState.state == .fan, viewState.dictationState == .idle else { return }
+        transition(.rest)
+    }
 
     func createNote() {
         viewState.tabWindowStart = 0
@@ -208,8 +207,6 @@ final class DeckController: NSObject {
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
                     self.viewState.state = newState
                 }
-                self.configureMonitors()
-                self.configureIdleTimer()
             }
         } else if newState == .rest {
             cancelTransitionToRest()
@@ -224,8 +221,6 @@ final class DeckController: NSObject {
                     self.viewState.isCollapsing = false
                 }
                 self.viewState.tabWindowStart = 0
-                self.configureMonitors()
-                self.configureIdleTimer()
             }
             shrinkWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
@@ -235,8 +230,6 @@ final class DeckController: NSObject {
                 viewState.state = newState
             }
             layout(for: newState)
-            configureMonitors()
-            configureIdleTimer()
         }
     }
 
@@ -265,44 +258,4 @@ final class DeckController: NSObject {
         )
     }
 
-    private func configureIdleTimer() {
-        idleTimer?.invalidate()
-        guard viewState.state != .rest else { return }
-        var lastActivity = Date()
-        var lastPointer = NSEvent.mouseLocation
-        idleTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.viewState.dictationState == .idle else { return }
-                if self.viewState.state == .fan {
-                    if self.viewState.fanInteractionActive {
-                        self.cancelTransitionToRest()
-                    } else {
-                        self.scheduleTransitionToRest()
-                    }
-                    return
-                }
-                let pointer = NSEvent.mouseLocation
-                if abs(pointer.x - lastPointer.x) > 2 || abs(pointer.y - lastPointer.y) > 2 {
-                    lastPointer = pointer
-                    lastActivity = .now
-                }
-                let idle = Date().timeIntervalSince(lastActivity)
-                switch self.viewState.state {
-                case .expanded(let id) where idle > 60 && self.model.note(id: id)?.isPinned != true: self.transition(.rest)
-                default: break
-                }
-            }
-        }
-    }
-
-    private func configureMonitors() {
-        if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor); self.outsideMonitor = nil }
-        guard case .expanded = viewState.state else { return }
-        outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.viewState.dictationState == .idle else { return }
-                if !self.panel.frame.contains(NSEvent.mouseLocation) { self.transition(.rest) }
-            }
-        }
-    }
 }

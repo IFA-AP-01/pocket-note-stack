@@ -88,7 +88,7 @@ struct NoteTextView: NSViewRepresentable {
                 
                 // For italic
                 if pattern == "\\*[^*]+\\*" {
-                    let descriptor = font.fontDescriptor.withSymbolicTraits(.italic) ?? font.fontDescriptor
+                    let descriptor = font.fontDescriptor.withSymbolicTraits(.italic)
                     if let italicFont = NSFont(descriptor: descriptor, size: fontSize) {
                         textView.textStorage?.addAttribute(.font, value: italicFont, range: match.range)
                     }

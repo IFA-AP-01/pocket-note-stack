@@ -19,6 +19,41 @@ struct Pocket_StackTests {
         #expect(note.taskProgress?.total == 2)
     }
 
+    @Test func noteTitleSkipsMediaLinksAndMarkdownFormatting() {
+        let note = Note(body: """
+        ![Cover](cover.png)
+        [Documentation](https://example.com)
+        <video src="clip.mp4"></video>
+        https://example.com/standalone
+
+        ## **Actual _text_ title** with [context](https://example.com/context)
+        """)
+
+        #expect(note.title == "Actual text title with context")
+    }
+
+    @Test func noteTitleUsesFirstMeaningfulTextAcrossCommonMarkdownContainers() {
+        #expect(Note.derivedTitle(from: "```swift\nlet value = 1\n```\n> **Quoted text**") == "Quoted text")
+        #expect(Note.derivedTitle(from: "---\n- [ ] **Ship** the release") == "Ship the release")
+        #expect(Note.derivedTitle(from: "<p>Hello <strong>world</strong></p>") == "Hello world")
+        #expect(Note.derivedTitle(from: "![Only image](image.png)").isEmpty)
+    }
+
+    @Test func customTitleOverridesAutomaticTitleAndOldArchivesRemainDecodable() throws {
+        let note = Note(customTitle: "  My custom title  ", body: "Automatic title\nBody")
+        #expect(note.title == "Automatic title")
+        #expect(note.customTitle == "My custom title")
+        #expect(note.displayTitle == "My custom title")
+
+        let encoded = try JSONEncoder().encode(note)
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "customTitle")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(Note.self, from: legacyData)
+        #expect(decoded.customTitle == nil)
+        #expect(decoded.displayTitle == "Automatic title")
+    }
+
     @Test func taskMarkdownRoundTrip() {
         let markdown = "- [ ] First\n- [x] Second"
         let internalText = NoteTask.fromMarkdown(markdown)
@@ -34,12 +69,13 @@ struct Pocket_StackTests {
         let cipher = BodyCipher(rawKey: Data(repeating: 0x7a, count: 32))
         let repository = try SQLiteNoteRepository(url: databaseURL, cipher: cipher)
         let secret = "unique-plaintext-voice-note-73c18d"
-        let note = Note(body: secret, colorIndex: 3, customColorHex: "5A7DE1")
+        let note = Note(customTitle: "Encrypted title", body: secret, colorIndex: 3, customColorHex: "5A7DE1")
 
         try await repository.upsert(note)
         let loaded = try await repository.load()
         #expect(loaded.count == 1)
         #expect(loaded.first?.body == secret)
+        #expect(loaded.first?.customTitle == "Encrypted title")
         #expect(loaded.first?.customColorHex == "5A7DE1")
         let bytes = try Data(contentsOf: databaseURL)
         #expect(bytes.range(of: Data(secret.utf8)) == nil)

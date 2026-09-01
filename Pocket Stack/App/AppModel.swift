@@ -49,6 +49,19 @@ final class AppModel {
         persist(note)
     }
 
+    func updateContent(id: UUID, body: String, customTitle: String?) {
+        guard var note = note(id: id) else { return }
+        let trimmedTitle = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let normalizedTitle = trimmedTitle.isEmpty ? nil : String(trimmedTitle.prefix(120))
+        let derivedTitle = Note.derivedTitle(from: body)
+        guard note.body != body || note.title != derivedTitle || note.customTitle != normalizedTitle else { return }
+        note.body = body
+        note.title = derivedTitle
+        note.customTitle = normalizedTitle
+        note.modifiedAt = .now
+        persist(note)
+    }
+
     func togglePin(id: UUID) { mutate(id) { $0.isPinned.toggle() } }
     func cycleColor(id: UUID) {
         mutate(id) {
@@ -133,7 +146,9 @@ final class AppModel {
         }
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return source }
-        return source.filter { $0.title.localizedCaseInsensitiveContains(term) || $0.body.localizedCaseInsensitiveContains(term) }
+        return source.filter {
+            $0.displayTitle.localizedCaseInsensitiveContains(term) || $0.body.localizedCaseInsensitiveContains(term)
+        }
     }
 
     private func mutate(_ id: UUID, change: (inout Note) -> Void) {
