@@ -75,4 +75,112 @@ struct Pocket_StackTests {
         #expect(chunks.count == 1)
         #expect(chunks.first?.count == 3_200)
     }
+
+    @Test func deckTabWindowMovesOneNoteAndStopsAtItsBounds() {
+        let first = DeckTabWindow(noteCount: 8)
+        #expect(first.visibleRange == 0..<5)
+        #expect(!first.canMovePrevious)
+        #expect(first.canMoveNext)
+
+        let second = first.movingNext()
+        #expect(second.startIndex == 1)
+        #expect(second.visibleRange == 1..<6)
+        #expect(second.canMovePrevious)
+
+        let last = DeckTabWindow(startIndex: 100, noteCount: 8)
+        #expect(last.startIndex == 3)
+        #expect(last.visibleRange == 3..<8)
+        #expect(!last.canMoveNext)
+        #expect(last.movingNext() == last)
+    }
+
+    @Test func deckTabWindowClampsForSmallAndChangingCollections() {
+        let small = DeckTabWindow(startIndex: 4, noteCount: 4)
+        #expect(small.startIndex == 0)
+        #expect(small.visibleRange == 0..<4)
+        #expect(!small.canMovePrevious)
+        #expect(!small.canMoveNext)
+
+        let scrolled = DeckTabWindow(startIndex: 5, noteCount: 10)
+        let afterDeletion = scrolled.clamped(to: 6)
+        #expect(afterDeletion.startIndex == 1)
+        #expect(afterDeletion.visibleRange == 1..<6)
+
+        let afterReorder = afterDeletion.clamped(to: 6)
+        #expect(afterReorder.startIndex == afterDeletion.startIndex)
+    }
+
+    @Test func deckLayoutPlacesSidePanelsAgainstTheirScreenEdges() {
+        let screen = NSRect(x: 0, y: 0, width: 1_440, height: 900)
+        let visible = NSRect(x: 0, y: 24, width: 1_440, height: 852)
+        let noteSize = CGSize(width: 470, height: 390)
+
+        let left = DeckLayout.panelFrame(
+            state: .fan,
+            edge: .left,
+            screenFrame: screen,
+            visibleFrame: visible,
+            noteSize: noteSize,
+            noteCount: 8,
+            edgeWidth: 14
+        )
+        let right = DeckLayout.panelFrame(
+            state: .fan,
+            edge: .right,
+            screenFrame: screen,
+            visibleFrame: visible,
+            noteSize: noteSize,
+            noteCount: 8,
+            edgeWidth: 14
+        )
+
+        #expect(left == NSRect(x: 0, y: 24, width: 554, height: 852))
+        #expect(right == NSRect(x: 886, y: 24, width: 554, height: 852))
+    }
+
+    @Test func deckLayoutCentersBottomPillAndActivePanel() {
+        let screen = NSRect(x: 0, y: 0, width: 1_440, height: 900)
+        let visible = NSRect(x: 0, y: 24, width: 1_440, height: 852)
+        let noteSize = CGSize(width: 470, height: 390)
+
+        let rest = DeckLayout.panelFrame(
+            state: .rest,
+            edge: .bottom,
+            screenFrame: screen,
+            visibleFrame: visible,
+            noteSize: noteSize,
+            noteCount: 8,
+            edgeWidth: 14
+        )
+        let active = DeckLayout.panelFrame(
+            state: .expanded(UUID()),
+            edge: .bottom,
+            screenFrame: screen,
+            visibleFrame: visible,
+            noteSize: noteSize,
+            noteCount: 8,
+            edgeWidth: 14
+        )
+
+        #expect(rest == NSRect(x: 630.5, y: 24, width: 179, height: 14))
+        #expect(active == NSRect(x: 280, y: 24, width: 880, height: 474))
+        #expect(active.minX >= visible.minX)
+        #expect(active.maxX <= visible.maxX)
+    }
+
+    @Test func deckLayoutClampsBottomPanelToNarrowVisibleFrame() {
+        let screen = NSRect(x: 0, y: 0, width: 700, height: 600)
+        let visible = NSRect(x: 10, y: 24, width: 680, height: 552)
+        let frame = DeckLayout.panelFrame(
+            state: .fan,
+            edge: .bottom,
+            screenFrame: screen,
+            visibleFrame: visible,
+            noteSize: CGSize(width: 470, height: 390),
+            noteCount: 12,
+            edgeWidth: 14
+        )
+
+        #expect(frame == NSRect(x: 10, y: 24, width: 680, height: 474))
+    }
 }

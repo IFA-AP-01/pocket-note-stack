@@ -4,7 +4,7 @@ import Observation
 import ServiceManagement
 
 enum DeckEdge: String, CaseIterable, Identifiable {
-    case left, right
+    case left, right, bottom
     var id: String { rawValue }
 }
 

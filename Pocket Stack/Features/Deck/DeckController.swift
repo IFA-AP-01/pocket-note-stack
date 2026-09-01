@@ -25,12 +25,12 @@ enum DeckState: Equatable {
 @Observable
 final class DeckViewState {
     var state: DeckState = .rest
-    var showAll = false
+    var tabWindowStart = 0
     var revealTick = 0
+    var fanInteractionActive = false
+    var isCollapsing = false
     var dictationState: DictationState = .idle
     let editorBridge = EditorBridge()
-
-    var fanVisible: Bool { state != .rest }
 }
 
 @MainActor
@@ -68,6 +68,7 @@ final class DeckController: NSObject {
 
     func invalidate() {
         shrinkWork?.cancel()
+        restTransitionWork?.cancel()
         idleTimer?.invalidate()
         if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }
         panel.orderOut(nil)
@@ -92,14 +93,20 @@ final class DeckController: NSObject {
     private var restTransitionWork: DispatchWorkItem?
 
     func scheduleTransitionToRest() {
-        guard viewState.state == .fan, restTransitionWork == nil else { return }
+        guard viewState.state == .fan,
+              !viewState.fanInteractionActive,
+              !viewState.isCollapsing,
+              restTransitionWork == nil else { return }
         let work = DispatchWorkItem { [weak self] in
             self?.restTransitionWork = nil
-            guard let self, self.viewState.state == .fan else { return }
+            guard let self,
+                  self.viewState.state == .fan,
+                  !self.viewState.fanInteractionActive,
+                  !self.viewState.isCollapsing else { return }
             self.transition(.rest)
         }
         restTransitionWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
     func cancelTransitionToRest() {
@@ -109,6 +116,7 @@ final class DeckController: NSObject {
 
     func pointerEntered() {
         cancelTransitionToRest()
+        cancelCollapseAnimation()
         guard viewState.state == .rest else { return }
         coordinator?.activate(self)
         transition(.fan)
@@ -117,17 +125,26 @@ final class DeckController: NSObject {
     func pointerExited() {
         guard viewState.state == .fan else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self, self.viewState.state == .fan, let screen = self.screen else { return }
-            let edgeWidth = max(70, 70 * self.preferences.deckScale)
-            let hot = self.preferences.edge == .right
-                ? NSRect(x: screen.frame.maxX - edgeWidth, y: screen.frame.minY, width: edgeWidth, height: screen.frame.height)
-                : NSRect(x: screen.frame.minX, y: screen.frame.minY, width: edgeWidth, height: screen.frame.height)
-            if !hot.contains(NSEvent.mouseLocation) { self.scheduleTransitionToRest() }
+            guard let self, self.viewState.state == .fan else { return }
+            self.viewState.fanInteractionActive = false
+            self.scheduleTransitionToRest()
+        }
+    }
+
+    func fanInteractionChanged(_ active: Bool) {
+        guard viewState.state == .fan else { return }
+        viewState.fanInteractionActive = active
+        if active {
+            cancelTransitionToRest()
+            cancelCollapseAnimation()
+        } else {
+            scheduleTransitionToRest()
         }
     }
 
     func expand(_ id: UUID) {
         cancelTransitionToRest()
+        cancelCollapseAnimation()
         guard viewState.dictationState == .idle else { return }
         transition(.expanded(id))
         panel.makeKeyAndOrderFront(nil)
@@ -137,6 +154,7 @@ final class DeckController: NSObject {
     func collapse() { if viewState.dictationState == .idle { transition(.rest) } }
 
     func createNote() {
+        viewState.tabWindowStart = 0
         let note = model.create()
         expand(note.id)
     }
@@ -177,6 +195,8 @@ final class DeckController: NSObject {
     private func transition(_ newState: DeckState) {
         let oldState = viewState.state
         guard oldState != newState else { return }
+        if newState == .rest, viewState.isCollapsing { return }
+        if newState != .rest { cancelCollapseAnimation() }
         shrinkWork?.cancel()
         shrinkWork = nil
 
@@ -192,14 +212,24 @@ final class DeckController: NSObject {
                 self.configureIdleTimer()
             }
         } else if newState == .rest {
-            withAnimation(.spring(response: 0.30, dampingFraction: 0.9)) {
-                viewState.state = newState
+            cancelTransitionToRest()
+            viewState.fanInteractionActive = false
+            withAnimation(.easeIn(duration: 0.18)) { viewState.isCollapsing = true }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.viewState.isCollapsing else { return }
+                self.shrinkWork = nil
+                self.layout(for: .rest)
+                withAnimation(.easeOut(duration: 0.22)) {
+                    self.viewState.state = .rest
+                    self.viewState.isCollapsing = false
+                }
+                self.viewState.tabWindowStart = 0
+                self.configureMonitors()
+                self.configureIdleTimer()
             }
-            let work = DispatchWorkItem { [weak self] in self?.layout(for: .rest) }
             shrinkWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: work)
-            configureMonitors()
-            configureIdleTimer()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
+            return
         } else {
             withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
                 viewState.state = newState
@@ -208,30 +238,31 @@ final class DeckController: NSObject {
             configureMonitors()
             configureIdleTimer()
         }
-        if newState == .rest { viewState.showAll = false }
+    }
+
+    private func cancelCollapseAnimation() {
+        guard viewState.isCollapsing else { return }
+        shrinkWork?.cancel()
+        shrinkWork = nil
+        withAnimation(.easeOut(duration: 0.12)) { viewState.isCollapsing = false }
     }
 
     private func layout() { layout(for: viewState.state) }
 
     private func layout(for state: DeckState) {
         guard let screen else { return }
-        let visible = screen.visibleFrame
-        let full = screen.frame
-        let width: CGFloat
-        let height: CGFloat
-        let y: CGFloat
-        switch state {
-        case .rest:
-            width = max(14, preferences.edgeWidth)
-            height = min(420, max(54, CGFloat(max(model.activeNotes.count, 1)) * 19 + 20))
-            y = visible.midY - height / 2
-        case .fan, .expanded:
-            width = preferences.noteSize.width + 84
-            height = visible.height
-            y = visible.minY
-        }
-        let x = preferences.edge == .right ? full.maxX - width : full.minX
-        panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+        panel.setFrame(
+            DeckLayout.panelFrame(
+                state: state,
+                edge: preferences.edge,
+                screenFrame: screen.frame,
+                visibleFrame: screen.visibleFrame,
+                noteSize: preferences.noteSize,
+                noteCount: model.activeNotes.count,
+                edgeWidth: preferences.edgeWidth
+            ),
+            display: true
+        )
     }
 
     private func configureIdleTimer() {
@@ -242,33 +273,26 @@ final class DeckController: NSObject {
         idleTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.viewState.dictationState == .idle else { return }
-                let pointer = NSEvent.mouseLocation
-                if self.viewState.state == .fan, !self.panel.frame.contains(pointer) {
-                    self.scheduleTransitionToRest()
+                if self.viewState.state == .fan {
+                    if self.viewState.fanInteractionActive {
+                        self.cancelTransitionToRest()
+                    } else {
+                        self.scheduleTransitionToRest()
+                    }
                     return
-                } else {
-                    self.cancelTransitionToRest()
                 }
+                let pointer = NSEvent.mouseLocation
                 if abs(pointer.x - lastPointer.x) > 2 || abs(pointer.y - lastPointer.y) > 2 {
                     lastPointer = pointer
                     lastActivity = .now
                 }
                 let idle = Date().timeIntervalSince(lastActivity)
                 switch self.viewState.state {
-                case .fan where idle > 4: self.transition(.rest)
                 case .expanded(let id) where idle > 60 && self.model.note(id: id)?.isPinned != true: self.transition(.rest)
                 default: break
                 }
             }
         }
-    }
-
-    private var fanHotZone: NSRect {
-        guard let screen else { return .zero }
-        let width = max(72, 72 * preferences.deckScale)
-        return preferences.edge == .right
-            ? NSRect(x: screen.frame.maxX - width, y: screen.frame.minY, width: width, height: screen.frame.height)
-            : NSRect(x: screen.frame.minX, y: screen.frame.minY, width: width, height: screen.frame.height)
     }
 
     private func configureMonitors() {

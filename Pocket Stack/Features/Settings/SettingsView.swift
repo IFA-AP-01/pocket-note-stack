@@ -31,7 +31,9 @@ private struct GeneralSettingsView: View {
         Form {
             Section("Deck") {
                 Picker("Screen edge", selection: $preferences.edge) {
-                    Text("Left").tag(DeckEdge.left); Text("Right").tag(DeckEdge.right)
+                    Text("Left").tag(DeckEdge.left)
+                    Text("Right").tag(DeckEdge.right)
+                    Text("Bottom").tag(DeckEdge.bottom)
                 }
                 Picker("Style", selection: $preferences.style) {
                     ForEach(DeckStyle.allCases) { Text($0.title).tag($0) }

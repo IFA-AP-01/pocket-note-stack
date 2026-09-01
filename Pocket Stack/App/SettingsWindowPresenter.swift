@@ -26,7 +26,7 @@ final class SettingsWindowPresenter {
     /// scene creation and subsequent clicks while the existing window is
     /// behind another application.
     func requestFocus() {
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         focusTask?.cancel()
         focusTask = Task { @MainActor [weak self] in
             for delay in [0, 40, 140, 300] {
@@ -51,7 +51,7 @@ final class SettingsWindowPresenter {
     }
 
     private func focus(_ window: NSWindow) {
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         window.collectionBehavior.remove(.moveToActiveSpace)
         window.level = .normal
         window.makeKeyAndOrderFront(nil)
@@ -90,8 +90,9 @@ struct PocketStackSettingsButton<Label: View>: View {
     }
 
     private func open() {
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         openSettings()
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         SettingsWindowPresenter.shared.requestFocus()
     }
 }
@@ -105,8 +106,9 @@ struct PocketStackMenuBarLabel: View {
         Image(systemName: "note.text")
             .accessibilityLabel("Pocket Stack")
             .onReceive(NotificationCenter.default.publisher(for: .pocketStackOpenSettings)) { _ in
-                NSApp.activate()
+                NSApp.activate(ignoringOtherApps: true)
                 openSettings()
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                 SettingsWindowPresenter.shared.requestFocus()
             }
     }

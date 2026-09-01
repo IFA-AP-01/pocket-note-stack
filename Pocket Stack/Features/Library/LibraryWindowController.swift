@@ -17,11 +17,14 @@ final class LibraryWindowController: NSWindowController {
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.isReleasedWhenClosed = false
+            window.center()
             self.window = window
+        } else if let host = window?.contentViewController as? NSHostingController<LibraryView> {
+            host.rootView = root
         } else {
             window?.contentViewController = NSHostingController(rootView: root)
         }
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
     }
