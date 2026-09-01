@@ -85,7 +85,30 @@ final class DeckController: NSObject {
         hosting.rootView = DeckRootView(model: model, preferences: preferences, state: viewState, controller: self)
     }
 
+    func updateLayout() {
+        layout()
+    }
+
+    private var restTransitionWork: DispatchWorkItem?
+
+    func scheduleTransitionToRest() {
+        guard viewState.state == .fan, restTransitionWork == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.restTransitionWork = nil
+            guard let self, self.viewState.state == .fan else { return }
+            self.transition(.rest)
+        }
+        restTransitionWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+    }
+
+    func cancelTransitionToRest() {
+        restTransitionWork?.cancel()
+        restTransitionWork = nil
+    }
+
     func pointerEntered() {
+        cancelTransitionToRest()
         guard viewState.state == .rest else { return }
         coordinator?.activate(self)
         transition(.fan)
@@ -99,11 +122,12 @@ final class DeckController: NSObject {
             let hot = self.preferences.edge == .right
                 ? NSRect(x: screen.frame.maxX - edgeWidth, y: screen.frame.minY, width: edgeWidth, height: screen.frame.height)
                 : NSRect(x: screen.frame.minX, y: screen.frame.minY, width: edgeWidth, height: screen.frame.height)
-            if !hot.contains(NSEvent.mouseLocation) { self.transition(.rest) }
+            if !hot.contains(NSEvent.mouseLocation) { self.scheduleTransitionToRest() }
         }
     }
 
     func expand(_ id: UUID) {
+        cancelTransitionToRest()
         guard viewState.dictationState == .idle else { return }
         transition(.expanded(id))
         panel.makeKeyAndOrderFront(nil)
@@ -157,9 +181,6 @@ final class DeckController: NSObject {
         shrinkWork = nil
 
         if newState.rank >= oldState.rank {
-            // Fan and editor share one final panel size. Resize first, then let
-            // SwiftUI animate content on a later display frame to avoid relayout
-            // jitter that looks like the note flying in from mid-screen.
             layout(for: newState)
             if newState == .fan { viewState.revealTick &+= 1 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0 / 60.0) { [weak self] in
@@ -222,9 +243,11 @@ final class DeckController: NSObject {
             Task { @MainActor [weak self] in
                 guard let self, self.viewState.dictationState == .idle else { return }
                 let pointer = NSEvent.mouseLocation
-                if self.viewState.state == .fan, !self.fanHotZone.contains(pointer) {
-                    self.transition(.rest)
+                if self.viewState.state == .fan, !self.panel.frame.contains(pointer) {
+                    self.scheduleTransitionToRest()
                     return
+                } else {
+                    self.cancelTransitionToRest()
                 }
                 if abs(pointer.x - lastPointer.x) > 2 || abs(pointer.y - lastPointer.y) > 2 {
                     lastPointer = pointer

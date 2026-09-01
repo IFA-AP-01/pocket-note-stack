@@ -67,8 +67,14 @@ struct NoteEditorView: View {
         }
         .background(palette.paper)
         .foregroundStyle(palette.ink)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
+        .clipShape(UnevenRoundedRectangle(
+            topLeadingRadius: preferences.edge == .right ? 12 : 0,
+            bottomLeadingRadius: preferences.edge == .right ? 12 : 0,
+            bottomTrailingRadius: preferences.edge == .right ? 0 : 12,
+            topTrailingRadius: preferences.edge == .right ? 0 : 12,
+            style: .continuous
+        ))
+        .shadow(color: .black.opacity(0.18), radius: 12, x: preferences.edge == .right ? -5 : 5, y: 5)
         .onAppear { draft = note?.body ?? ""; Task { @MainActor in bridge.focus() } }
         .onChange(of: draft) { _, value in
             guard !bridge.isDictating else { return }

@@ -17,12 +17,15 @@ struct DeckRootView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.94)))
             } else {
                 activeDeck
-                    .padding(onRight ? .trailing : .leading, 3)
                     .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: onRight ? .trailing : .leading)
+        .ignoresSafeArea()
         .animation(.spring(response: 0.30, dampingFraction: 0.88), value: state.fanVisible)
+        .onChange(of: model.activeNotes.count) { _, _ in
+            controller.updateLayout()
+        }
     }
 
     private var fan: some View {
@@ -43,13 +46,13 @@ struct DeckRootView: View {
 
     @ViewBuilder private var activeDeck: some View {
         if onRight {
-            HStack(spacing: 10) {
+            HStack(spacing: 0) {
                 sideContent
                 fan
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         } else {
-            HStack(spacing: 10) {
+            HStack(spacing: 0) {
                 fan
                 sideContent
             }
@@ -70,11 +73,6 @@ struct DeckRootView: View {
                 .transition(.modifier(active: NotePullTransition(hidden: true, onRight: onRight),
                                       identity: NotePullTransition(hidden: false, onRight: onRight)))
                 .id(id)
-        } else if let hoveredNoteID, let note = model.note(id: hoveredNoteID) {
-            HoverNotePreview(note: note)
-                .transition(.modifier(active: NotePullTransition(hidden: true, onRight: onRight),
-                                      identity: NotePullTransition(hidden: false, onRight: onRight)))
-                .allowsHitTesting(false)
         }
     }
 }
@@ -124,14 +122,19 @@ private struct NoteFan: View {
     private var onRight: Bool { edge == .right }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: onRight ? .trailing : .leading, spacing: 12) {
             Group {
                 if stateNeedsScroll {
-                    ScrollView(.vertical, showsIndicators: false) { tabs.padding(.vertical, 4) }
+                    ScrollView(.vertical, showsIndicators: false) {
+                        tabs
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: onRight ? .trailing : .leading)
+                    }
                         .frame(maxHeight: 720)
                         .scrollClipDisabled()
                 } else {
                     tabs
+                        .frame(maxWidth: .infinity, alignment: onRight ? .trailing : .leading)
                 }
             }
 
@@ -143,7 +146,7 @@ private struct NoteFan: View {
             AddNoteButton(action: onCreate)
                 .staged(index: notes.count + 1, revealed: revealed, onRight: onRight)
         }
-        .frame(width: 56)
+        .frame(width: 56, alignment: onRight ? .trailing : .leading)
         .onAppear { revealed = true }
         .onChange(of: revealTick) { _, _ in
             revealed = false
@@ -158,7 +161,7 @@ private struct NoteFan: View {
     private var stateNeedsScroll: Bool { notes.count > 5 }
 
     private var tabs: some View {
-        VStack(spacing: style == .labelled ? -66 : 7) {
+        VStack(alignment: onRight ? .trailing : .leading, spacing: style == .labelled ? -66 : 7) {
             if notes.isEmpty {
                 EmptyNoteTab(edge: edge, action: onCreate)
                     .staged(index: 0, revealed: revealed, onRight: onRight)
@@ -211,10 +214,11 @@ private struct NoteTab: View {
 
     private var palette: NotePaletteColor { NotePalette.color(for: note) }
     private var onRight: Bool { edge == .right }
+    private var isExpanded: Bool { isHovered && !isOpen }
 
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .top) {
+            ZStack(alignment: onRight ? .leading : .trailing) {
                 edgeShape
                     .fill(palette.paper)
                     .overlay {
@@ -225,27 +229,27 @@ private struct NoteTab: View {
                             x: onRight ? -3 : 3, y: 2)
 
                 if labelled {
-                    Text(note.displayTitle.uppercased())
-                        .font(.custom(fontName, size: 11))
-                        .tracking(0.15)
-                        .foregroundStyle(palette.ink.opacity(0.86))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(width: 104, height: 52)
-                        .rotationEffect(.degrees(onRight ? 90 : -90))
-                        // rotationEffect changes drawing, not layout. Constrain
-                        // the rotated label to the exposed shingle strip so it
-                        // cannot paint over the next tab.
-                        .frame(width: 52, height: 112, alignment: .top)
-                        .clipped()
+                    HStack(spacing: 0) {
+                        if onRight {
+                            sideStrip
+                            if isExpanded {
+                                divider
+                                previewContent
+                            }
+                        } else {
+                            if isExpanded {
+                                previewContent
+                                divider
+                            }
+                            sideStrip
+                        }
+                    }
                 } else {
                     RoundedRectangle(cornerRadius: 3).fill(palette.accent)
                         .frame(width: 10, height: 20).padding(.top, 7)
                 }
             }
-            .frame(width: labelled ? 54 : 28, height: labelled ? 180 : 34)
-            .scaleEffect(isHovered ? 1.025 : 1, anchor: onRight ? .trailing : .leading)
-            .offset(x: isHovered ? (onRight ? -10 : 10) : 0)
+            .frame(width: isExpanded ? 260 : (labelled ? 54 : 28), height: labelled ? 180 : 34)
             .contentShape(Rectangle())
         }
         .buttonStyle(TabPressButtonStyle())
@@ -253,9 +257,50 @@ private struct NoteTab: View {
             if note.isPinned { Circle().fill(palette.accent).frame(width: 6, height: 6).padding(8) }
         }
         .onHover(perform: onHoverChange)
-        .animation(.easeOut(duration: 0.14), value: isHovered)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isExpanded)
         .animation(.spring(response: 0.28, dampingFraction: 0.82), value: isOpen)
         .help(note.displayTitle)
+    }
+
+    private var sideStrip: some View {
+        Text(note.displayTitle.uppercased())
+            .font(.custom(fontName, size: 11))
+            .tracking(0.15)
+            .foregroundStyle(palette.ink.opacity(0.86))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(width: 104, height: 52)
+            .rotationEffect(.degrees(onRight ? -90 : 90))
+            .frame(width: 52, height: 180, alignment: .center)
+            .clipped()
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(width: 1)
+            .overlay(
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: 0))
+                    path.addLine(to: CGPoint(x: 0, y: 180))
+                }
+                .stroke(palette.ink.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            )
+    }
+
+    private var previewContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(note.displayTitle)
+                .font(.headline)
+                .foregroundStyle(palette.ink)
+            Text(note.body.isEmpty ? "Empty note" : note.body)
+                .font(.custom(fontName.isEmpty ? "Noteworthy-Light" : fontName, size: 15))
+                .foregroundStyle(palette.ink.opacity(0.9))
+                .lineSpacing(2)
+                .lineLimit(6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(14)
     }
 
     private var edgeShape: UnevenRoundedRectangle {
@@ -269,27 +314,73 @@ private struct NoteTab: View {
 
 private struct HoverNotePreview: View {
     let note: Note
+    let edge: DeckEdge
+    let fontName: String
     private var palette: NotePaletteColor { NotePalette.color(for: note) }
+    private var onRight: Bool { edge == .right }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Circle().fill(palette.accent).frame(width: 9, height: 9)
-                Text(note.displayTitle).font(.headline).lineLimit(1)
-                Spacer()
-                if note.isPinned { Image(systemName: "pin.fill").font(.caption) }
+        HStack(spacing: 0) {
+            if onRight {
+                sideStrip
+                divider
+                mainContent
+            } else {
+                mainContent
+                divider
+                sideStrip
             }
-            Divider().overlay(palette.ink.opacity(0.18))
+        }
+        .frame(width: 260, height: 180)
+        .background(palette.paper, in: UnevenRoundedRectangle(
+            topLeadingRadius: onRight ? 12 : 0,
+            bottomLeadingRadius: onRight ? 12 : 0,
+            bottomTrailingRadius: onRight ? 0 : 12,
+            topTrailingRadius: onRight ? 0 : 12,
+            style: .continuous
+        ))
+        .shadow(color: .black.opacity(0.18), radius: 12, x: onRight ? -5 : 5, y: 5)
+    }
+
+    private var sideStrip: some View {
+        Text(note.displayTitle.uppercased())
+            .font(.custom(fontName, size: 11))
+            .tracking(0.15)
+            .foregroundStyle(palette.ink.opacity(0.6))
+            .lineLimit(1)
+            .frame(width: 140, height: 24)
+            .rotationEffect(.degrees(onRight ? -90 : 90))
+            .frame(width: 32, height: 180)
+            .clipped()
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(width: 1)
+            .overlay(
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: 0))
+                    path.addLine(to: CGPoint(x: 0, y: 180))
+                }
+                .stroke(palette.ink.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            )
+    }
+
+    private var mainContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(note.displayTitle)
+                .font(.headline)
+                .foregroundStyle(palette.ink)
+            
             Text(note.body.isEmpty ? "Empty note" : note.body)
-                .font(.system(size: 13, design: .rounded))
-                .foregroundStyle(palette.ink.opacity(0.82))
-                .lineLimit(8)
+                .font(.custom(fontName, size: 16))
+                .foregroundStyle(palette.ink.opacity(0.9))
+                .lineSpacing(2)
+                .lineLimit(6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(14)
-        .frame(width: 280, height: 210)
-        .background(palette.paper, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.24), radius: 14, y: 5)
+        .padding(16)
     }
 }
 
