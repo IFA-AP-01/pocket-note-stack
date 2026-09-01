@@ -13,7 +13,9 @@ final class LibraryWindowController: NSWindowController {
             let window = NSWindow(contentViewController: NSHostingController(rootView: root))
             window.title = "Pocket Stack"
             window.setContentSize(NSSize(width: 920, height: 620))
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
             window.isReleasedWhenClosed = false
             self.window = window
         } else {

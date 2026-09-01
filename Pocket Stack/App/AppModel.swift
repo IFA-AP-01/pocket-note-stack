@@ -117,8 +117,20 @@ final class AppModel {
         Task { await perform { try await self.repository.ingest(normalized) } }
     }
 
-    func search(_ query: String, archived: Bool) -> [Note] {
-        let source = archived ? archivedNotes : notes.sorted { $0.modifiedAt > $1.modifiedAt }
+    enum FilterState: String, CaseIterable, Identifiable {
+        case all = "All"
+        case active = "Active"
+        case archived = "Archived"
+        var id: String { rawValue }
+    }
+
+    func search(_ query: String, filter: FilterState) -> [Note] {
+        let source: [Note]
+        switch filter {
+        case .all: source = notes.sorted { $0.modifiedAt > $1.modifiedAt }
+        case .active: source = activeNotes.sorted { $0.modifiedAt > $1.modifiedAt }
+        case .archived: source = archivedNotes
+        }
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return source }
         return source.filter { $0.title.localizedCaseInsensitiveContains(term) || $0.body.localizedCaseInsensitiveContains(term) }
