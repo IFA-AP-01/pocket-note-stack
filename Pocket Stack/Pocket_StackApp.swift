@@ -6,27 +6,45 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct Pocket_StackApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    private let environment = AppEnvironment.shared
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        MenuBarExtra {
+            Button("New Note", systemImage: "square.and.pencil") {
+                environment.deckCoordinator.createAndExpand()
+            }
+            .keyboardShortcut("n", modifiers: [.command, .option])
+
+            Button("All Notes", systemImage: "note.text") {
+                environment.libraryWindow.show(archive: false)
+            }
+            Button("Archive", systemImage: "archivebox") {
+                environment.libraryWindow.show(archive: true)
+            }
+
+            Divider()
+
+            PocketStackSettingsButton {
+                Label("Settings…", systemImage: "gearshape")
+            }
+
+            Divider()
+
+            Button("Quit Pocket Stack", systemImage: "power") {
+                NSApp.terminate(nil)
+            }
+            .keyboardShortcut("q")
+        } label: {
+            PocketStackMenuBarLabel()
         }
-        .modelContainer(sharedModelContainer)
+        .menuBarExtraStyle(.menu)
+
+        Settings {
+            SettingsView(preferences: environment.preferences, environment: environment)
+        }
     }
 }
