@@ -11,6 +11,7 @@ struct NoteTextView: View {
     let palette: NotePaletteColor
     let fontName: String
     let fontSize: CGFloat
+    var heightBehavior: MarkdownEditorConfiguration.HeightBehavior = .scrolls
     let onCommand: (EditorCommand) -> Void
 
     var body: some View {
@@ -47,6 +48,7 @@ struct NoteTextView: View {
             theme: theme,
             services: PocketStackMarkdownServices.value,
             textInsets: TextInsets(horizontal: 16, vertical: 14),
+            heightBehavior: heightBehavior,
             extensions: [HighlightExtension(), StrikethroughExtension()]
         )
     }

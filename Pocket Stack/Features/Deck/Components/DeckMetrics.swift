@@ -19,7 +19,7 @@ enum DeckMetrics {
     enum Fan {
         static let crossAxisSize: CGFloat = 46
         static let layoutSpacing: CGFloat = 12
-        static let tabSpacingLabelled: CGFloat = -66
+        static let tabSpacingLabelled: CGFloat = -50
         static let tabSpacingUnlabelled: CGFloat = 7
     }
 
@@ -96,8 +96,8 @@ enum DeckMetrics {
     
     enum Animation {
         static let hoverDuration: TimeInterval = 0.14
-        static let hoverPreviewDelay: Duration = .milliseconds(650)
-        static let hoverOpenDelay: Duration = .milliseconds(550)
+        static let hoverPreviewDelay: Duration = .milliseconds(300)
+        static let hoverOpenDelay: Duration = .milliseconds(500)
         static let previewSpringResponse: Double = 0.30
         static let previewSpringDamping: Double = 0.78
         static let openSpringResponse: Double = 0.28

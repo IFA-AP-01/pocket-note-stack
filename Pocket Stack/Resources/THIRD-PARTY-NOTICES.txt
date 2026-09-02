@@ -1,6 +1,3 @@
-Pocket Stack includes design and implementation concepts derived from Noty:
-https://github.com/aimen08/noty
-
 MIT License
 
 Copyright (c) Noty contributors
