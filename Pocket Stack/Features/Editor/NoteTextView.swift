@@ -7,7 +7,6 @@ import SwiftUI
 struct NoteTextView: View {
     @Binding var text: String
     let noteID: UUID
-    let bridge: EditorBridge
     let palette: NotePaletteColor
     let fontName: String
     let fontSize: CGFloat
@@ -23,12 +22,12 @@ struct NoteTextView: View {
             documentId: noteID.uuidString,
             onPasteImage: pasteImage
         )
-        .background(EditorWindowLocator(bridge: bridge))
         .onExitCommand { onCommand(.escape) }
     }
 
     private var configuration: MarkdownEditorConfiguration {
         let ink = NSColor(palette.ink)
+        let paper = NSColor(palette.paper)
         let accent = NSColor(palette.accent)
         let theme = MarkdownEditorTheme(
             bodyText: ink,
@@ -46,7 +45,7 @@ struct NoteTextView: View {
         )
         return MarkdownEditorConfiguration(
             theme: theme,
-            services: PocketStackMarkdownServices.value,
+            services: PocketStackMarkdownServices.value(ink: ink, paper: paper),
             textInsets: TextInsets(horizontal: 16, vertical: 14),
             heightBehavior: heightBehavior,
             extensions: [HighlightExtension(), StrikethroughExtension()]
@@ -68,46 +67,70 @@ struct NoteTextView: View {
 }
 
 private enum PocketStackMarkdownServices {
-    static let value = MarkdownEditorServices(
-        images: PocketStackImageProvider(),
-        syntaxHighlighter: HighlighterSwiftBridge(),
-        latex: SwiftMathBridge()
+    private static let lightHighlighter = HighlighterSwiftBridge(autoSwitchAppearance: false)
+    private static let darkHighlighter = HighlighterSwiftBridge(
+        lightTheme: "atom-one-dark",
+        autoSwitchAppearance: false
     )
+
+    static func value(ink: NSColor, paper: NSColor) -> MarkdownEditorServices {
+        let usesDarkCodeTheme = paper.relativeLuminance < 0.5
+        let highlighter = PaletteSyntaxHighlighter(
+            base: usesDarkCodeTheme ? darkHighlighter : lightHighlighter,
+            background: ink.withAlphaComponent(usesDarkCodeTheme ? 0.16 : 0.1)
+        )
+        return MarkdownEditorServices(
+            images: PocketStackImageProvider(fingerprintValue: colorKey(ink: ink, paper: paper)),
+            syntaxHighlighter: highlighter,
+            latex: SwiftMathBridge()
+        )
+    }
+
+    private static func colorKey(ink: NSColor, paper: NSColor) -> String {
+        [ink, paper]
+            .compactMap { $0.usingColorSpace(.sRGB) }
+            .map { color in
+                String(format: "%.4f,%.4f,%.4f,%.4f", color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent)
+            }
+            .joined(separator: "|")
+    }
 }
 
 private struct PocketStackImageProvider: EmbeddedImageProvider, @unchecked Sendable {
+    let fingerprintValue: String
+
     func image(for reference: EmbeddedImageRequest) -> NSImage? {
         AttachmentManager.shared.loadImage(named: reference.name)
     }
 
-    func fingerprint() -> AnyHashable { 0 }
+    func fingerprint() -> AnyHashable { fingerprintValue }
 }
 
-private struct EditorWindowLocator: NSViewRepresentable {
-    let bridge: EditorBridge
+private struct PaletteSyntaxHighlighter: SyntaxHighlighter, @unchecked Sendable {
+    let base: HighlighterSwiftBridge
+    let background: NSColor
 
-    func makeNSView(context: Context) -> WindowLocatorView {
-        let view = WindowLocatorView()
-        view.onWindowChange = { [weak bridge] window in
-            bridge?.attach(to: window)
-        }
-        return view
+    func codeFont(size: CGFloat) -> NSFont {
+        base.codeFont(size: size)
     }
 
-    func updateNSView(_ nsView: WindowLocatorView, context: Context) {
-        nsView.onWindowChange = { [weak bridge] window in
-            bridge?.attach(to: window)
-        }
-        bridge.attach(to: nsView.window)
+    func backgroundColor() -> NSColor {
+        background
     }
+
+    func highlight(code: String, language: String?) -> NSAttributedString? {
+        base.highlight(code: code, language: language)
+    }
+
+    var appearanceDidChangeNotification: Notification.Name? { nil }
 }
 
-private final class WindowLocatorView: NSView {
-    var onWindowChange: ((NSWindow?) -> Void)?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        onWindowChange?(window)
+private extension NSColor {
+    var relativeLuminance: CGFloat {
+        guard let color = usingColorSpace(.sRGB) else { return 1 }
+        return 0.2126 * color.redComponent
+            + 0.7152 * color.greenComponent
+            + 0.0722 * color.blueComponent
     }
 }
 

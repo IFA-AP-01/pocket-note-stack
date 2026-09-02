@@ -101,7 +101,6 @@ struct LibraryView: View {
                     NoteTextView(
                         text: $draft,
                         noteID: note.id,
-                        bridge: bridge,
                         palette: palette,
                         fontName: AppPreferences.shared.noteFontName,
                         fontSize: AppPreferences.shared.noteFontSize,

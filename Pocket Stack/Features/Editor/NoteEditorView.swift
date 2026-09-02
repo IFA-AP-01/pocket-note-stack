@@ -102,7 +102,6 @@ struct NoteEditorView: View {
             NoteTextView(
                 text: $draft,
                 noteID: noteID,
-                bridge: bridge,
                 palette: palette,
                 fontName: preferences.noteFontName,
                 fontSize: preferences.noteFontSize,
@@ -128,10 +127,6 @@ struct NoteEditorView: View {
             draft = note?.body ?? ""
             titleDraft = editableTitle
             usesCustomTitle = note?.customTitle != nil
-            Task { @MainActor in
-                await Task.yield()
-                bridge.focus()
-            }
         }
         .onChange(of: draft) { _, _ in
             guard !bridge.isDictating else { return }

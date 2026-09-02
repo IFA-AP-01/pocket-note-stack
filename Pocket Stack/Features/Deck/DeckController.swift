@@ -172,6 +172,7 @@ final class DeckController: NSObject {
         guard viewState.dictationState == .idle else { return }
         transition(.expanded(id))
         panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func closeExpanded() { transition(.fan) }
