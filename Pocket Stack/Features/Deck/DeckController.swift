@@ -34,6 +34,32 @@ final class DeckViewState {
 }
 
 @MainActor
+private final class DeckTransitionScheduler {
+    private var generation = 0
+    private var hasPendingAction = false
+
+    @discardableResult
+    func cancelPending() -> Bool {
+        let cancelledAction = hasPendingAction
+        hasPendingAction = false
+        generation &+= 1
+        return cancelledAction
+    }
+
+    func schedule(after delay: TimeInterval, action: @escaping @MainActor () -> Void) {
+        generation &+= 1
+        hasPendingAction = true
+        let scheduledGeneration = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard self?.generation == scheduledGeneration else { return }
+            self?.hasPendingAction = false
+            action()
+        }
+    }
+}
+
+
+@MainActor
 final class DeckController: NSObject {
     let displayID: CGDirectDisplayID
     let viewState = DeckViewState()
@@ -44,6 +70,7 @@ final class DeckController: NSObject {
     private var tracking: DeckTrackingView!
     private var hosting: FirstMouseHostingView<DeckRootView>!
     private var shrinkWork: DispatchWorkItem?
+    private let transitionScheduler = DeckTransitionScheduler()
     weak var coordinator: DeckCoordinator?
 
     init(displayID: CGDirectDisplayID, model: AppModel, preferences: AppPreferences, dictation: DictationCoordinator) {
@@ -65,6 +92,7 @@ final class DeckController: NSObject {
     }
 
     func invalidate() {
+        transitionScheduler.cancelPending()
         shrinkWork?.cancel()
         restTransitionWork?.cancel()
         panel.orderOut(nil)
@@ -148,7 +176,7 @@ final class DeckController: NSObject {
 
     func closeExpanded() { transition(.fan) }
     func collapse() {
-        guard viewState.state == .fan, viewState.dictationState == .idle else { return }
+        guard viewState.dictationState == .idle else { return }
         transition(.rest)
     }
 
@@ -192,8 +220,12 @@ final class DeckController: NSObject {
     }
 
     private func transition(_ newState: DeckState) {
+        let cancelledDeferredTransition = transitionScheduler.cancelPending()
         let oldState = viewState.state
-        guard oldState != newState else { return }
+        guard oldState != newState else {
+            if cancelledDeferredTransition { layout(for: newState) }
+            return
+        }
         if newState == .rest, viewState.isCollapsing { return }
         if newState != .rest { cancelCollapseAnimation() }
         shrinkWork?.cancel()
@@ -202,7 +234,7 @@ final class DeckController: NSObject {
         if newState.rank >= oldState.rank {
             layout(for: newState)
             if newState == .fan { viewState.revealTick &+= 1 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0 / 60.0) { [weak self] in
+            transitionScheduler.schedule(after: 2.0 / 60.0) { [weak self] in
                 guard let self else { return }
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
                     self.viewState.state = newState

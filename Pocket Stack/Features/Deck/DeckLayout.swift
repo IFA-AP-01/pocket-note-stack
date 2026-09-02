@@ -32,6 +32,18 @@ struct DeckTabWindow: Equatable {
 }
 
 enum DeckLayout {
+    private enum Metrics {
+        static let minRestCrossAxisSize: CGFloat = 14
+        static let expandedPadding: CGFloat = 84
+        static let minExpandedWidth: CGFloat = 880
+        
+        static let maxRestLength: CGFloat = 420
+        static let minRestLength: CGFloat = 54
+        static let maxRestNotes: Int = 14
+        static let restNoteStep: CGFloat = 21
+        static let restBaseLength: CGFloat = 11
+    }
+
     static func panelFrame(
         state: DeckState,
         edge: DeckEdge,
@@ -48,18 +60,18 @@ enum DeckLayout {
                 x: clampedCenterOrigin(center: screenFrame.midX, length: width, bounds: visibleFrame.minX...visibleFrame.maxX),
                 y: visibleFrame.minY,
                 width: width,
-                height: max(14, edgeWidth)
+                height: max(Metrics.minRestCrossAxisSize, edgeWidth)
             )
 
         case (.rest, .left), (.rest, .right):
-            let width = max(14, edgeWidth)
+            let width = max(Metrics.minRestCrossAxisSize, edgeWidth)
             let height = min(visibleFrame.height, restLength(noteCount: noteCount))
             let x = edge == .right ? screenFrame.maxX - width : screenFrame.minX
             return NSRect(x: x, y: visibleFrame.midY - height / 2, width: width, height: height)
 
         case (.fan, .bottom), (.expanded, .bottom):
-            let width = min(visibleFrame.width, max(noteSize.width + 84, 880))
-            let height = min(visibleFrame.height, noteSize.height + 84)
+            let width = min(visibleFrame.width, max(noteSize.width + Metrics.expandedPadding, Metrics.minExpandedWidth))
+            let height = min(visibleFrame.height, noteSize.height + Metrics.expandedPadding)
             return NSRect(
                 x: clampedCenterOrigin(center: visibleFrame.midX, length: width, bounds: visibleFrame.minX...visibleFrame.maxX),
                 y: visibleFrame.minY,
@@ -68,14 +80,16 @@ enum DeckLayout {
             )
 
         case (.fan, .left), (.expanded, .left), (.fan, .right), (.expanded, .right):
-            let width = min(visibleFrame.width, noteSize.width + 84)
+            let width = min(visibleFrame.width, noteSize.width + Metrics.expandedPadding)
             let x = edge == .right ? screenFrame.maxX - width : screenFrame.minX
             return NSRect(x: x, y: visibleFrame.minY, width: width, height: visibleFrame.height)
         }
     }
 
     private static func restLength(noteCount: Int) -> CGFloat {
-        min(420, max(54, CGFloat(min(max(noteCount, 1), 14)) * 21 + 11))
+        let activeNotes = min(max(noteCount, 1), Metrics.maxRestNotes)
+        let calculatedLength = CGFloat(activeNotes) * Metrics.restNoteStep + Metrics.restBaseLength
+        return min(Metrics.maxRestLength, max(Metrics.minRestLength, calculatedLength))
     }
 
     private static func clampedCenterOrigin(

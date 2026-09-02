@@ -59,9 +59,6 @@ final class DeckCoordinator: NSObject {
             controller.coordinator = self
             controllers[id] = controller
         }
-        // Refresh the controllers directly. Calling refreshAll() here would
-        // recurse back into rebuild() until the stack overflows; the crash can
-        // then misleadingly appear inside NSScreen.deviceDescription.
         controllers.values.forEach { $0.refresh() }
     }
 
