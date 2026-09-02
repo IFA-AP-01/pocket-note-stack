@@ -23,6 +23,9 @@ struct NoteFan: View {
     @State private var previewedID: UUID?
     @State private var hoverTask: Task<Void, Never>?
     @State private var fanSurfaceHovered = false
+    @State private var lastMouseLocation: CGPoint = .zero
+    @State private var lastMouseTime: Date = Date()
+    @State private var mouseVelocity: CGFloat = 0
 
     var body: some View {
         fanLayout {
@@ -40,6 +43,21 @@ struct NoteFan: View {
 
             AddNoteButton(action: onCreate)
                 .staged(index: notes.count + 2, revealed: revealed, edge: edge)
+        }
+        .onContinuousHover(coordinateSpace: .local) { phase in
+            let now = Date()
+            if case .active(let location) = phase {
+                let timeSince = now.timeIntervalSince(lastMouseTime)
+                if timeSince > 0 && timeSince < 0.2 {
+                    let distance = hypot(location.x - lastMouseLocation.x, location.y - lastMouseLocation.y)
+                    let currentVelocity = distance / CGFloat(timeSince)
+                    mouseVelocity = mouseVelocity * 0.5 + currentVelocity * 0.5
+                } else if timeSince >= 0.2 {
+                    mouseVelocity = 0
+                }
+                lastMouseLocation = location
+            }
+            lastMouseTime = now
         }
         .frame(
             width: edge == .bottom ? nil : DeckMetrics.Fan.crossAxisSize,
@@ -116,14 +134,30 @@ struct NoteFan: View {
                 previewedID = nil
             }
             hoverTask = Task { @MainActor in
-                try? await Task.sleep(for: DeckMetrics.Animation.hoverPreviewDelay)
-                guard !Task.isCancelled, hoveredID == note.id else { return }
-                withAnimation(.spring(response: DeckMetrics.Animation.previewSpringResponse, dampingFraction: DeckMetrics.Animation.previewSpringDamping)) {
+                let enterTime = Date()
+                while true {
+                    let now = Date()
+                    let timeSinceEnter = now.timeIntervalSince(enterTime)
+                    let timeSinceLastMove = now.timeIntervalSince(lastMouseTime)
+                    
+                    let effectiveVelocity = timeSinceLastMove > 0.1 ? 0 : mouseVelocity
+                    
+                    if timeSinceEnter >= DeckMetrics.Animation.hoverPreviewDelay {
+                        if effectiveVelocity <= DeckMetrics.Animation.hoverVelocityThreshold {
+                            break
+                        }
+                    }
+                    
+                    try? await Task.sleep(nanoseconds: 30_000_000)
+                    guard !Task.isCancelled, hoveredID == note.id else { return }
+                }
+
+                withAnimation(.easeOut(duration: 0.25)) {
                     previewedID = note.id
                 }
 
                 guard openOnHover else { return }
-                try? await Task.sleep(for: DeckMetrics.Animation.hoverOpenDelay)
+                try? await Task.sleep(nanoseconds: UInt64(DeckMetrics.Animation.hoverOpenDelay * 1_000_000_000))
                 guard !Task.isCancelled, hoveredID == note.id, previewedID == note.id else { return }
                 open(note.id)
             }

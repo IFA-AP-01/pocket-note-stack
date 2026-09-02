@@ -96,8 +96,9 @@ enum DeckMetrics {
     
     enum Animation {
         static let hoverDuration: TimeInterval = 0.14
-        static let hoverPreviewDelay: Duration = .milliseconds(300)
-        static let hoverOpenDelay: Duration = .milliseconds(500)
+        static let hoverPreviewDelay: TimeInterval = 0.2
+        static let hoverVelocityThreshold: CGFloat = 50
+        static let hoverOpenDelay: TimeInterval = 0.3
         static let previewSpringResponse: Double = 0.30
         static let previewSpringDamping: Double = 0.95
         static let openSpringResponse: Double = 0.28
