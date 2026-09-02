@@ -43,8 +43,11 @@ struct Pocket_StackApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Settings {
+        Window("Settings", id: "settings") {
             SettingsView(preferences: environment.preferences, environment: environment)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 760, height: 580)
     }
 }

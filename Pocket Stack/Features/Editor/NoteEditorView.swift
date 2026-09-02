@@ -288,8 +288,6 @@ private struct NoteColorChooser: View {
                     .help(color.name)
                 }
             }
-            Divider()
-            ColorPicker("Custom colour", selection: customBinding, supportsOpacity: false)
         }
         .padding(14)
         .frame(width: 190)

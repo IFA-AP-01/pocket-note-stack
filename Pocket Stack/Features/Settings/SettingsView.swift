@@ -2,23 +2,77 @@ import AppKit
 import Speech
 import SwiftUI
 
+private enum SettingsPane: String, CaseIterable, Identifiable {
+    case general
+    case appearance
+    case shortcuts
+    case speech
+    case sync
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .appearance: "Appearance"
+        case .shortcuts: "Shortcuts"
+        case .speech: "Dictation"
+        case .sync: "Sync"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .appearance: "paintbrush"
+        case .shortcuts: "keyboard"
+        case .speech: "waveform"
+        case .sync: "arrow.triangle.2.circlepath"
+        }
+    }
+}
+
 struct SettingsView: View {
     @Bindable var preferences: AppPreferences
     let environment: AppEnvironment
+    @AppStorage("settings.selectedPane") private var selectedPane = SettingsPane.general
 
     var body: some View {
-        TabView {
-            GeneralSettingsView(preferences: preferences, refresh: environment.deckCoordinator.refreshAll)
-                .tabItem { Label("General", systemImage: "gear") }
-            AppearanceSettingsView(preferences: preferences, refresh: environment.deckCoordinator.refreshAll)
-                .tabItem { Label("Appearance", systemImage: "paintbrush") }
-            ShortcutsSettingsView().tabItem { Label("Shortcuts", systemImage: "keyboard") }
-            SpeechSettingsView(preferences: preferences).tabItem { Label("Speech", systemImage: "waveform") }
-            SyncSettingsView().tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+        NavigationSplitView {
+            List(selection: $selectedPane) {
+                Section("Settings") {
+                    ForEach(SettingsPane.allCases) { pane in
+                        NavigationLink(value: pane) {
+                            Label(pane.title, systemImage: pane.systemImage)
+                        }
+                    }
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
+            Group {
+                switch selectedPane {
+                case .general:
+                    GeneralSettingsView(
+                        preferences: preferences,
+                        refresh: environment.deckCoordinator.refreshAll
+                    )
+                case .appearance:
+                    AppearanceSettingsView(
+                        preferences: preferences,
+                        refresh: environment.deckCoordinator.refreshAll
+                    )
+                case .shortcuts:
+                    ShortcutsSettingsView()
+                case .speech:
+                    SpeechSettingsView(preferences: preferences)
+                case .sync:
+                    SyncSettingsView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .scenePadding()
-        .frame(width: 610, height: 430)
-        .background(SettingsWindowProbe().frame(width: 0, height: 0))
+        .frame(minWidth: 700, minHeight: 520)
     }
 }
 
