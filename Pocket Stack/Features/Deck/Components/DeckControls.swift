@@ -23,7 +23,21 @@ struct DeckNavigationButton: View {
                 .font(.system(size: DeckMetrics.Navigation.iconSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(enabled ? DeckMetrics.Navigation.opacityEnabled : DeckMetrics.Navigation.opacityDisabled))
                 .frame(width: DeckMetrics.Navigation.buttonSize, height: DeckMetrics.Navigation.buttonSize)
-                .background(Circle().fill(Color.black.opacity(enabled ? DeckMetrics.Navigation.backgroundOpacityEnabled : DeckMetrics.Navigation.backgroundOpacityDisabled)))
+                .background(
+                    Group {
+                        if #available(macOS 12.0, *) {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Circle()
+                                        .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                                )
+                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        } else {
+                            Circle().fill(Color.black.opacity(enabled ? DeckMetrics.Navigation.backgroundOpacityEnabled : DeckMetrics.Navigation.backgroundOpacityDisabled))
+                        }
+                    }
+                )
         }
         .buttonStyle(.plain)
         .disabled(!enabled)

@@ -7,7 +7,7 @@ enum DeckMetrics {
         static let padding: CGFloat = 8
         static let crossAxisSize: CGFloat = 14
         static let cornerRadius: CGFloat = 6
-        static let backgroundOpacity: Double = 0.68
+        static let backgroundOpacity: Double = 0.3
         static let shadowRadius: CGFloat = 5
         static let shadowOpacity: Double = 0.24
         
