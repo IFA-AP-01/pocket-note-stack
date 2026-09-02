@@ -103,8 +103,12 @@ private struct ListBlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(list.items.enumerated()), id: \.element.id) { index, item in
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text(marker(at: index)).frame(width: 24, alignment: .trailing).foregroundStyle(palette.ink.opacity(0.65))
+                HStack(alignment: .top, spacing: 4) {
+                    Text(marker(at: index))
+                        .font(.system(size: fontSize))
+                        .frame(minWidth: 16, alignment: .trailing)
+                        .foregroundStyle(palette.ink.opacity(0.65))
+                        .padding(.top, 3)
                     NativeBlockTextView(
                         surfaceID: .listItem(blockID: blockID, itemID: item.id),
                         content: item.content,

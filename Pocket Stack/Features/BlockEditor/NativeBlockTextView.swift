@@ -18,7 +18,13 @@ final class WYSIWYGTextView: NSTextView {
     var commandHandler: ((EditorCommand, NSTextView) -> Bool)?
     var imageHandler: ((String) -> Void)?
     var documentCopyHandler: (() -> Bool)?
+    var documentPasteHandler: (() -> Bool)?
     var documentSelectAllHandler: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        EditorBridge.setLastActive(self)
+        return super.becomeFirstResponder()
+    }
 
     override var intrinsicContentSize: NSSize {
         guard let layoutManager, let textContainer else { return NSSize(width: NSView.noIntrinsicMetric, height: 24) }
@@ -71,6 +77,10 @@ final class WYSIWYGTextView: NSTextView {
         if documentCopyHandler?() != true { super.copy(sender) }
     }
 
+    override func paste(_ sender: Any?) {
+        if documentPasteHandler?() != true { super.paste(sender) }
+    }
+
     override func selectAll(_ sender: Any?) {
         if let documentSelectAllHandler { documentSelectAllHandler() }
         else { super.selectAll(sender) }
@@ -109,6 +119,12 @@ struct NativeBlockTextView: NSViewRepresentable {
             editor?.insert(.image(ImageBlock(alt: "Image", source: source, title: nil)), after: surfaceID)
         }
         view.documentCopyHandler = { [weak editor] in editor?.copyDocumentSelection() ?? false }
+        view.documentPasteHandler = { [weak coordinator = context.coordinator] in
+            guard let coordinator else { return false }
+            guard let string = NSPasteboard.general.string(forType: .string) else { return false }
+            coordinator.insertText(string, in: view)
+            return true
+        }
         view.documentSelectAllHandler = { [weak editor] in editor?.selectAllDocument() }
         let selectionPan = NSPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSelectionPan(_:)))
         selectionPan.buttonMask = 0x1
@@ -140,6 +156,7 @@ struct NativeBlockTextView: NSViewRepresentable {
         view.commandHandler = nil
         view.imageHandler = nil
         view.documentCopyHandler = nil
+        view.documentPasteHandler = nil
         view.documentSelectAllHandler = nil
         view.setSelectedRange(NSRange(location: 0, length: 0))
         coordinator.editor.focusRegistry.unregister(coordinator.surfaceID, view: view)
@@ -149,7 +166,7 @@ struct NativeBlockTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelegate {
         let surfaceID: EditorSurfaceID
         let editor: BlockEditorModel
-        private var style: BlockTextStyle
+        var style: BlockTextStyle
         private var palette: NotePaletteColor
         private var fontName: String
         private var fontSize: CGFloat
@@ -183,8 +200,16 @@ struct NativeBlockTextView: NSViewRepresentable {
         }
 
         func updateIfNeeded(_ content: RichText, in textView: NSTextView) {
-            guard content != lastContent, textView.window?.firstResponder !== textView else { return }
+            guard content != lastContent else { return }
+            let isFirstResponder = textView.window?.firstResponder === textView
+            let oldSelectedRange = textView.selectedRange()
             install(content, in: textView)
+            if isFirstResponder {
+                let length = (textView.string as NSString).length
+                let safeLocation = min(oldSelectedRange.location, length)
+                let safeLength = min(oldSelectedRange.length, length - safeLocation)
+                textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
+            }
         }
 
         func textDidBeginEditing(_ notification: Notification) {
@@ -233,6 +258,15 @@ struct NativeBlockTextView: NSViewRepresentable {
             textView.invalidateIntrinsicContentSize()
         }
 
+        func insertText(_ text: String, in textView: NSTextView) {
+            let selected = textView.selectedRange()
+            if textView.shouldChangeText(in: selected, replacementString: text) {
+                textView.textStorage?.replaceCharacters(in: selected, with: text)
+                textView.didChangeText()
+                textView.setSelectedRange(NSRange(location: selected.location + (text as NSString).length, length: 0))
+            }
+        }
+
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             guard !textView.hasMarkedText(), textView.selectedRange().length == 0 else { return false }
             let range = textView.selectedRange()
@@ -240,21 +274,43 @@ struct NativeBlockTextView: NSViewRepresentable {
             switch commandSelector {
             case #selector(NSResponder.insertNewline(_:)):
                 if case .code = style { return false }
-                editor.split(surfaceID, at: range.location)
+                let location = range.location
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.editor.split(self.surfaceID, at: location)
+                }
                 return true
             case #selector(NSResponder.deleteBackward(_:)) where range.location == 0:
-                return editor.mergeBackward(surfaceID)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    _ = self.editor.mergeBackward(self.surfaceID)
+                }
+                return true
             case #selector(NSResponder.moveLeft(_:)) where range.location == 0:
-                editor.move(from: surfaceID, direction: .previous, screenX: nil)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.editor.move(from: self.surfaceID, direction: .previous, screenX: nil)
+                }
                 return true
             case #selector(NSResponder.moveRight(_:)) where range.location == length:
-                editor.move(from: surfaceID, direction: .next, screenX: nil)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.editor.move(from: self.surfaceID, direction: .next, screenX: nil)
+                }
                 return true
             case #selector(NSResponder.moveUp(_:)) where isOnBoundaryLine(textView, first: true):
-                editor.move(from: surfaceID, direction: .up, screenX: caretScreenX(textView))
+                let x = caretScreenX(textView)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.editor.move(from: self.surfaceID, direction: .up, screenX: x)
+                }
                 return true
             case #selector(NSResponder.moveDown(_:)) where isOnBoundaryLine(textView, first: false):
-                editor.move(from: surfaceID, direction: .down, screenX: caretScreenX(textView))
+                let x = caretScreenX(textView)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.editor.move(from: self.surfaceID, direction: .down, screenX: x)
+                }
                 return true
             default:
                 return false

@@ -525,17 +525,8 @@ final class FocusRegistry {
     }
 
     private func installMouseMonitorIfNeeded() {
-        guard mouseMonitor == nil else { return }
-        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
-            guard let self else { return event }
-            let hitView = event.window?.contentView?.hitTest(event.locationInWindow)
-            let clickedInsideEditor = self.views.values.contains { reference in
-                guard let editorView = reference.value, let hitView else { return false }
-                return hitView === editorView || hitView.isDescendant(of: editorView)
-            }
-            if !clickedInsideEditor { self.clearSelections() }
-            return event
-        }
+        // CT-003: Removed mouse monitor that clears selection when clicking outside the editor.
+        // This allows cross-block selections to persist when the user clicks formatting controls.
     }
 
     private func removeMouseMonitorIfUnused() {

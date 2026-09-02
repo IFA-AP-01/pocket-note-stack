@@ -129,9 +129,21 @@ final class EditorBridge {
         textView.didChangeText()
     }
 
+    private static weak var globalLastActiveTextView: NSTextView?
+
+    static func setLastActive(_ textView: NSTextView) {
+        globalLastActiveTextView = textView
+    }
+
     private func activeTextView() -> NSTextView? {
-        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
-              textView.delegate is NativeTextViewCoordinator || textView is WYSIWYGTextView else { return nil }
-        return textView
+        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+           textView.delegate is NativeTextViewCoordinator || textView is WYSIWYGTextView {
+            Self.globalLastActiveTextView = textView
+            return textView
+        }
+        if let last = Self.globalLastActiveTextView, last.window != nil {
+            return last
+        }
+        return nil
     }
 }
