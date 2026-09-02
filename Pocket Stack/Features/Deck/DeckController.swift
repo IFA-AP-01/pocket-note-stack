@@ -236,7 +236,7 @@ final class DeckController: NSObject {
             if newState == .fan { viewState.revealTick &+= 1 }
             transitionScheduler.schedule(after: 2.0 / 60.0) { [weak self] in
                 guard let self else { return }
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                withAnimation(.easeOut(duration: 0.3)) {
                     self.viewState.state = newState
                 }
             }
@@ -258,7 +258,7 @@ final class DeckController: NSObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
             return
         } else {
-            withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
+            withAnimation(.easeOut(duration: 0.3)) {
                 viewState.state = newState
             }
             layout(for: newState)

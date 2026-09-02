@@ -10,7 +10,6 @@ struct NotePullTransition: ViewModifier {
                 x: hidden ? edge.hiddenTransitionOffset.width : 0,
                 y: hidden ? edge.hiddenTransitionOffset.height : 0
             )
-            .scaleEffect(hidden ? 0.975 : 1, anchor: edge.scaleAnchor)
             .opacity(hidden ? 0 : 1)
     }
 }
@@ -28,7 +27,7 @@ struct StagedTabModifier: ViewModifier {
             )
             .opacity(revealed ? 1 : 0)
             .animation(
-                .spring(response: DeckMetrics.Animation.stageSpringResponse, dampingFraction: DeckMetrics.Animation.stageSpringDamping).delay(Double(index) * DeckMetrics.Animation.stageStaggerDelay),
+                .easeOut(duration: 0.3).delay(Double(index) * DeckMetrics.Animation.stageStaggerDelay),
                 value: revealed
             )
     }

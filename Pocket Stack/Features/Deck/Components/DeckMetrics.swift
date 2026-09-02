@@ -17,17 +17,17 @@ enum DeckMetrics {
     }
 
     enum Fan {
-        static let crossAxisSize: CGFloat = 46
-        static let layoutSpacing: CGFloat = 12
-        static let tabSpacingLabelled: CGFloat = -50
-        static let tabSpacingUnlabelled: CGFloat = 7
+        static let crossAxisSize: CGFloat = 36
+        static let layoutSpacing: CGFloat = 10
+        static let tabSpacingLabelled: CGFloat = -40
+        static let tabSpacingUnlabelled: CGFloat = 6
     }
 
     enum Tab {
-        static let closedDepthLabelled: CGFloat = 46
-        static let closedDepthUnlabelled: CGFloat = 24
-        static let closedLengthLabelled: CGFloat = 180
-        static let closedLengthUnlabelled: CGFloat = 34
+        static let closedDepthLabelled: CGFloat = 36
+        static let closedDepthUnlabelled: CGFloat = 20
+        static let closedLengthLabelled: CGFloat = 150
+        static let closedLengthUnlabelled: CGFloat = 28
         static let verticalTitleLength: CGFloat = 104
         static let hoverDepthIncrease: CGFloat = 6
         
@@ -61,8 +61,8 @@ enum DeckMetrics {
     }
 
     enum Navigation {
-        static let buttonSize: CGFloat = 30
-        static let iconSize: CGFloat = 11
+        static let buttonSize: CGFloat = 26
+        static let iconSize: CGFloat = 10
         static let opacityEnabled: Double = 0.86
         static let opacityDisabled: Double = 0.28
         static let backgroundOpacityEnabled: Double = 0.42
@@ -77,8 +77,8 @@ enum DeckMetrics {
     }
 
     enum AddButton {
-        static let size: CGFloat = 34
-        static let iconSize: CGFloat = 14
+        static let size: CGFloat = 28
+        static let iconSize: CGFloat = 12
         static let iconOpacity: Double = 0.88
         static let backgroundOpacity: Double = 0.44
         static let hoverScale: CGFloat = 1.08
@@ -87,8 +87,8 @@ enum DeckMetrics {
     }
     
     enum Transitions {
-        static let stagedOffset: CGFloat = 74
-        static let hiddenOffset: CGFloat = 38
+        static let stagedOffset: CGFloat = 90
+        static let hiddenOffset: CGFloat = 50
         static let shadowOffsetLength: CGFloat = 3
         static let shadowOffsetDepth: CGFloat = 2
         static let collapseAdditionalOffset: CGFloat = 84
@@ -99,13 +99,13 @@ enum DeckMetrics {
         static let hoverPreviewDelay: Duration = .milliseconds(300)
         static let hoverOpenDelay: Duration = .milliseconds(500)
         static let previewSpringResponse: Double = 0.30
-        static let previewSpringDamping: Double = 0.78
+        static let previewSpringDamping: Double = 0.95
         static let openSpringResponse: Double = 0.28
-        static let openSpringDamping: Double = 0.82
+        static let openSpringDamping: Double = 0.95
         static let expandSpringResponse: Double = 0.30
-        static let expandSpringDamping: Double = 0.76
+        static let expandSpringDamping: Double = 0.95
         static let stageSpringResponse: Double = 0.36
-        static let stageSpringDamping: Double = 0.82
+        static let stageSpringDamping: Double = 0.95
         static let stageStaggerDelay: Double = 0.045
         static let pressDuration: TimeInterval = 0.11
         static let openDuration: TimeInterval = 0.12
