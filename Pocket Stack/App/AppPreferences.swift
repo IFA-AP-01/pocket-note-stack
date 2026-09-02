@@ -22,7 +22,6 @@ final class AppPreferences {
 
     var edge: DeckEdge { didSet { defaults.set(edge.rawValue, forKey: "deck.edge") } }
     var style: DeckStyle { didSet { defaults.set(style.rawValue, forKey: "deck.style") } }
-    var deckScale: Double { didSet { defaults.set(deckScale, forKey: "deck.scale") } }
     var edgeWidth: Double { didSet { defaults.set(edgeWidth, forKey: "deck.edgeWidth") } }
     var openOnHover: Bool { didSet { defaults.set(openOnHover, forKey: "deck.openOnHover") } }
     var showOverFullScreen: Bool { didSet { defaults.set(showOverFullScreen, forKey: "deck.fullScreen") } }
@@ -37,7 +36,6 @@ final class AppPreferences {
     private init() {
         edge = DeckEdge(rawValue: defaults.string(forKey: "deck.edge") ?? "") ?? .right
         style = DeckStyle(rawValue: defaults.string(forKey: "deck.style") ?? "") ?? .labelled
-        deckScale = defaults.object(forKey: "deck.scale") as? Double ?? 1
         edgeWidth = defaults.object(forKey: "deck.edgeWidth") as? Double ?? 14
         openOnHover = defaults.object(forKey: "deck.openOnHover") as? Bool ?? false
         showOverFullScreen = defaults.object(forKey: "deck.fullScreen") as? Bool ?? false
@@ -61,14 +59,14 @@ final class AppPreferences {
     }
 
     var launchAtLogin: Bool {
-        get { SMAppService.mainApp.status == .enabled }
-        set {
-            do {
-                if newValue { try SMAppService.mainApp.register() }
-                else { try SMAppService.mainApp.unregister() }
-            } catch {
-                NSLog("Pocket Stack launch-at-login: %@", error.localizedDescription)
-            }
+        SMAppService.mainApp.status == .enabled
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) throws {
+        if enabled {
+            try SMAppService.mainApp.register()
+        } else {
+            try SMAppService.mainApp.unregister()
         }
     }
 }

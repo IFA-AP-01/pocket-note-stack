@@ -25,7 +25,6 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle(initialArchive ? "Archive" : "All Notes")
-            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
             .searchable(text: $query, prompt: "Search notes")
             .toolbar {
                 ToolbarItemGroup {
@@ -43,6 +42,7 @@ struct LibraryView: View {
                     }
                 }
             }
+            .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 420)
         } detail: {
             if let selection, let note = model.note(id: selection) {
                 noteDetail(note)
@@ -61,23 +61,55 @@ struct LibraryView: View {
     }
 
     private func noteDetail(_ note: Note) -> some View {
-        Form {
-            Section("Note") {
-                TextEditor(text: $draft)
-                    .font(.body)
-                    .frame(minHeight: 360)
-                    .onChange(of: draft) { _, value in
-                        model.updateBody(id: note.id, body: value)
-                    }
-            }
+        let palette = NotePalette.color(for: note)
 
-            Section("Details") {
-                LabeledContent("Status", value: note.isArchived ? "Archived" : "Active")
-                LabeledContent("Created", value: note.createdAt.formatted(date: .long, time: .shortened))
-                LabeledContent("Modified", value: note.modifiedAt.formatted(date: .long, time: .shortened))
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label(
+                            note.isArchived ? "Archived" : "Active",
+                            systemImage: note.isArchived ? "archivebox.fill" : "square.stack.3d.up.fill"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(note.modifiedAt, style: .relative)
+                            .font(.subheadline)
+                            .foregroundStyle(palette.ink.opacity(0.65))
+                    }
+
+                    Divider()
+
+                    Text(note.displayTitle)
+                        .font(.title2.bold())
+
+                    TextEditor(text: $draft)
+                        .font(.custom(AppPreferences.shared.noteFontName, size: AppPreferences.shared.noteFontSize))
+                        .foregroundStyle(palette.ink)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 340)
+                        .onChange(of: draft) { _, value in
+                            model.updateBody(id: note.id, body: value)
+                        }
+                }
+                .padding(20)
+                .foregroundStyle(palette.ink)
+                .background(palette.paper, in: RoundedRectangle(cornerRadius: 14))
+
+                GroupBox("Details") {
+                    VStack(spacing: 10) {
+                        LabeledContent("Status", value: note.isArchived ? "Archived" : "Active")
+                        Divider()
+                        LabeledContent("Created", value: note.createdAt.formatted(date: .long, time: .shortened))
+                        Divider()
+                        LabeledContent("Modified", value: note.modifiedAt.formatted(date: .long, time: .shortened))
+                    }
+                    .padding(.top, 4)
+                }
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .formStyle(.grouped)
         .navigationTitle(note.displayTitle)
         .toolbar {
             ToolbarItemGroup {
@@ -119,24 +151,32 @@ private struct LibraryNoteRow: View {
     let note: Note
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(note.displayTitle)
-                .font(.headline)
-                .lineLimit(1)
+        let palette = NotePalette.color(for: note)
 
-            if !note.preview.isEmpty {
-                Text(note.preview)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(palette.accent)
+                .frame(width: 4)
 
-            HStack {
-                Text(note.isArchived ? "Archived" : "Active")
-                Spacer()
-                Text(note.modifiedAt, style: .relative)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(note.displayTitle)
+                    .font(.headline)
+                    .lineLimit(1)
+
+                if !note.preview.isEmpty {
+                    Text(note.preview)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                HStack {
+                    Text(note.isArchived ? "Archived" : "Active")
+                    Spacer()
+                    Text(note.modifiedAt, style: .relative)
+                }
+                .font(.caption)
+                .foregroundStyle(.tertiary)
             }
-            .font(.caption)
-            .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 3)
     }

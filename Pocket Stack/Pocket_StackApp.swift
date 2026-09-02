@@ -45,6 +45,7 @@ struct Pocket_StackApp: App {
 
         Window("Settings", id: "settings") {
             SettingsView(preferences: environment.preferences, environment: environment)
+                .background(SettingsWindowRegistration().frame(width: 0, height: 0))
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)

@@ -25,8 +25,9 @@ final class LibraryWindowController: NSWindowController {
             window?.contentViewController = NSHostingController(rootView: root)
         }
         window?.title = archive ? "Archive" : "All Notes"
-        NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        if let window {
+            AppWindowActivation.presentAfterMenuDismisses(window)
+        }
     }
 }
