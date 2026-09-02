@@ -12,6 +12,19 @@ final class EditorBridge {
 
     func showFind() { activeTextView()?.performFindPanelAction(NSMenuItem()) }
 
+    @discardableResult
+    func performBlockCommand(_ command: EditorCommand) -> Bool {
+        guard let textView = activeTextView() as? WYSIWYGTextView else { return false }
+        return textView.commandHandler?(command, textView) == true
+    }
+
+    @discardableResult
+    func insertImageBlock(_ source: String) -> Bool {
+        guard let textView = activeTextView() as? WYSIWYGTextView else { return false }
+        textView.imageHandler?(source)
+        return true
+    }
+
     func toggleTask() {
         guard let textView = activeTextView() else { return }
         let source = textView.string as NSString
@@ -118,7 +131,7 @@ final class EditorBridge {
 
     private func activeTextView() -> NSTextView? {
         guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
-              textView.delegate is NativeTextViewCoordinator else { return nil }
+              textView.delegate is NativeTextViewCoordinator || textView is WYSIWYGTextView else { return nil }
         return textView
     }
 }

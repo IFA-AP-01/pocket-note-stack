@@ -99,13 +99,11 @@ struct NoteEditorView: View {
             .frame(height: 42)
 
             Divider().overlay(palette.accent.opacity(0.45))
-            NoteTextView(
-                text: $draft,
-                noteID: noteID,
+            BlockEditorView(
+                markdown: $draft,
                 palette: palette,
                 fontName: preferences.noteFontName,
-                fontSize: preferences.noteFontSize,
-                onCommand: handleCommand
+                fontSize: preferences.noteFontSize
             )
         }
         .background(palette.paper)
@@ -193,6 +191,7 @@ struct NoteEditorView: View {
     }
 
     private func handleCommand(_ command: EditorCommand) {
+        if !bridge.isDictating, bridge.performBlockCommand(command) { return }
         switch command {
         case .escape:
             if bridge.isDictating { onMicrophone() } else { close() }
@@ -244,7 +243,9 @@ struct NoteEditorView: View {
         guard panel.runModal() == .OK,
               let url = panel.url,
               let filename = AttachmentManager.shared.saveFile(from: url) else { return }
-        bridge.insertText("![Image](\(filename))")
+        if !bridge.insertImageBlock(filename) {
+            bridge.insertText("![Image](\(filename))")
+        }
     }
 }
 

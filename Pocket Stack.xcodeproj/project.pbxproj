@@ -10,6 +10,7 @@
 		D5A0C00130A0000100C0D3E1 /* MarkdownEngine in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00330A0000100C0D3E1 /* MarkdownEngine */; };
 		D5A0C00630A0000100C0D3E1 /* MarkdownEngineCodeBlocks in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */; };
 		D5A0C00730A0000100C0D3E1 /* MarkdownEngineLatex in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */; };
+		D5B0C00130B0000100C0D3E1 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = D5B0C00330B0000100C0D3E1 /* Markdown */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D5B0C00130B0000100C0D3E1 /* Markdown in Frameworks */,
 				D5A0C00130A0000100C0D3E1 /* MarkdownEngine in Frameworks */,
 				D5A0C00630A0000100C0D3E1 /* MarkdownEngineCodeBlocks in Frameworks */,
 				D5A0C00730A0000100C0D3E1 /* MarkdownEngineLatex in Frameworks */,
@@ -121,6 +123,7 @@
 			);
 			name = "Pocket Stack";
 			packageProductDependencies = (
+				D5B0C00330B0000100C0D3E1 /* Markdown */,
 				D5A0C00330A0000100C0D3E1 /* MarkdownEngine */,
 				D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */,
 				D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */,
@@ -208,6 +211,7 @@
 			mainGroup = 6C64B4F330467589003B51BA;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 				D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -608,6 +612,14 @@
 				version = 0.12.0;
 			};
 		};
+		D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.8.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -625,6 +637,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */;
 			productName = MarkdownEngineLatex;
+		};
+		D5B0C00330B0000100C0D3E1 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
