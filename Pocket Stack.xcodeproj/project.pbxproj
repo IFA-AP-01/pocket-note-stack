@@ -6,9 +6,7 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		D5B0C00130B0000100C0D3E1 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = D5B0C00330B0000100C0D3E1 /* Markdown */; };
-/* End PBXBuildFile section */
+
 
 /* Begin PBXContainerItemProxy section */
 		6C64B50C3046758A003B51BA /* PBXContainerItemProxy */ = {
@@ -56,7 +54,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D5B0C00130B0000100C0D3E1 /* Markdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -116,9 +113,6 @@
 				6C64B4FE30467589003B51BA /* Pocket Stack */,
 			);
 			name = "Pocket Stack";
-			packageProductDependencies = (
-				D5B0C00330B0000100C0D3E1 /* Markdown */,
-			);
 			productName = "Pocket Stack";
 			productReference = 6C64B4FC30467589003B51BA /* Pocket Stack.app */;
 			productType = "com.apple.product-type.application";
@@ -201,9 +195,6 @@
 			);
 			mainGroup = 6C64B4F330467589003B51BA;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6C64B4FD30467589003B51BA /* Products */;
 			projectDirPath = "";
@@ -592,25 +583,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/swiftlang/swift-markdown";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.8.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		D5B0C00330B0000100C0D3E1 /* Markdown */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */;
-			productName = Markdown;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6C64B4F430467589003B51BA /* Project object */;
 }
