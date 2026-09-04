@@ -1,8 +1,13 @@
 import SwiftUI
 
 struct EditorFormattingBar: View {
-    let palette: NotePaletteColor
+    var palette: NotePaletteColor? = nil
     let onCommand: (EditorCommand) -> Void
+
+    init(palette: NotePaletteColor? = nil, onCommand: @escaping (EditorCommand) -> Void) {
+        self.palette = palette
+        self.onCommand = onCommand
+    }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -33,9 +38,9 @@ struct EditorFormattingBar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
         }
-        .background(palette.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+        .background(palette?.ink.opacity(0.045) ?? Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
         .buttonStyle(.plain)
-        .foregroundStyle(palette.ink)
+        .foregroundStyle(palette?.ink ?? Color.primary)
     }
 
     private var separator: some View {

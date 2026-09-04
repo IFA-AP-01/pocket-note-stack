@@ -181,6 +181,15 @@ final class DeckController: NSObject {
         transition(.rest)
     }
 
+    func deleteNote(_ id: UUID) {
+        if viewState.state.expandedID == id {
+            closeExpanded()
+        }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            model.delete(id: id)
+        }
+    }
+
     func createNote() {
         viewState.tabWindowStart = 0
         let note = model.create()

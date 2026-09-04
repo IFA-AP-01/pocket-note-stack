@@ -1,5 +1,12 @@
 import SwiftUI
 
+struct ActiveTabFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect? = nil
+    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
+        value = value ?? nextValue()
+    }
+}
+
 struct NoteTab: View {
     let note: Note
     let labelled: Bool
@@ -10,6 +17,7 @@ struct NoteTab: View {
     let isPreviewed: Bool
     let onHoverChange: (Bool) -> Void
     let action: () -> Void
+    let onDelete: () -> Void
 
     private var palette: NotePaletteColor { NotePalette.color(for: note) }
     private var isExpanded: Bool { isPreviewed && !isOpen }
@@ -44,6 +52,21 @@ struct NoteTab: View {
         .buttonStyle(TabPressButtonStyle())
         .overlay(alignment: edge.pinAlignment) {
             if note.isPinned { Circle().fill(palette.accent).frame(width: DeckMetrics.Tab.pinIndicatorSize, height: DeckMetrics.Tab.pinIndicatorSize).padding(DeckMetrics.Tab.pinIndicatorPadding) }
+        }
+        .background {
+            if isOpen {
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: ActiveTabFramePreferenceKey.self,
+                        value: geo.frame(in: .named("DeckContainer"))
+                    )
+                }
+            }
+        }
+        .contextMenu {
+            Button("Delete", role: .destructive) {
+                onDelete()
+            }
         }
         .onHover(perform: onHoverChange)
         .animation(.spring(response: DeckMetrics.Animation.expandSpringResponse, dampingFraction: DeckMetrics.Animation.expandSpringDamping), value: isExpanded)
@@ -123,9 +146,19 @@ struct NoteTab: View {
 
     private var mainContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(note.displayTitle)
-                .font(.headline)
-                .foregroundStyle(palette.ink)
+            HStack(alignment: .firstTextBaseline) {
+                Text(note.displayTitle)
+                    .font(.headline)
+                    .foregroundStyle(palette.ink)
+                Spacer()
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.ink.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help("Delete note")
+            }
             Text(note.body.isEmpty ? "Empty note" : note.body)
                 .font(.custom(fontName, size: DeckMetrics.Tab.bodyFontSize))
                 .foregroundStyle(palette.ink.opacity(0.9))

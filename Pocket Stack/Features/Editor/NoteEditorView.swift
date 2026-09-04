@@ -2,11 +2,264 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct NoteCardArrowShape: Shape {
+    let edge: DeckEdge
+    let offset: CGFloat
+    let width: CGFloat = 24
+    let height: CGFloat = 8.5
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let halfW = width / 2
+
+        switch edge {
+        case .bottom:
+            let y = rect.maxY
+            let x = offset
+            path.move(to: CGPoint(x: x - halfW - 2, y: y - 1))
+            path.addQuadCurve(
+                to: CGPoint(x: x - halfW * 0.5, y: y + height * 0.35),
+                control: CGPoint(x: x - halfW * 0.9, y: y + 0.5)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x, y: y + height),
+                control: CGPoint(x: x - halfW * 0.2, y: y + height * 0.9)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x + halfW * 0.5, y: y + height * 0.35),
+                control: CGPoint(x: x + halfW * 0.2, y: y + height * 0.9)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x + halfW + 2, y: y - 1),
+                control: CGPoint(x: x + halfW * 0.9, y: y + 0.5)
+            )
+            path.closeSubpath()
+
+        case .right:
+            let x = rect.maxX
+            let y = offset
+            path.move(to: CGPoint(x: x - 1, y: y - halfW - 2))
+            path.addQuadCurve(
+                to: CGPoint(x: x + height * 0.35, y: y - halfW * 0.5),
+                control: CGPoint(x: x + 0.5, y: y - halfW * 0.9)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x + height, y: y),
+                control: CGPoint(x: x + height * 0.9, y: y - halfW * 0.2)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x + height * 0.35, y: y + halfW * 0.5),
+                control: CGPoint(x: x + height * 0.9, y: y + halfW * 0.2)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x - 1, y: y + halfW + 2),
+                control: CGPoint(x: x + 0.5, y: y + halfW * 0.9)
+            )
+            path.closeSubpath()
+
+        case .left:
+            let x = rect.minX
+            let y = offset
+            path.move(to: CGPoint(x: x + 1, y: y - halfW - 2))
+            path.addQuadCurve(
+                to: CGPoint(x: x - height * 0.35, y: y - halfW * 0.5),
+                control: CGPoint(x: x - 0.5, y: y - halfW * 0.9)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x - height, y: y),
+                control: CGPoint(x: x - height * 0.9, y: y - halfW * 0.2)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x - height * 0.35, y: y + halfW * 0.5),
+                control: CGPoint(x: x - height * 0.9, y: y + halfW * 0.2)
+            )
+            path.addQuadCurve(
+                to: CGPoint(x: x + 1, y: y + halfW + 2),
+                control: CGPoint(x: x - 0.5, y: y + halfW * 0.9)
+            )
+            path.closeSubpath()
+        }
+
+        return path
+    }
+}
+
+private final class NativeThemeFrameProxy: NSObject {
+    weak var targetView: NSView?
+    init(targetView: NSView) { self.targetView = targetView }
+    @objc func window() -> NSWindow? { targetView?.window ?? NSApp.windows.first }
+}
+
+private final class NativeCloseWidgetHelper {
+    static var key: UInt8 = 0
+
+    static func setup(button: NSButton) {
+        // 1. Subclass button to disable layer update (forcing cell.draw), attach tracking area, and handle hover
+        let btnSubclassName = "PocketHoverThemeCloseWidget"
+        var btnCustomClass: AnyClass? = objc_getClass(btnSubclassName) as? AnyClass
+        if btnCustomClass == nil {
+            btnCustomClass = objc_allocateClassPair(type(of: button), btnSubclassName, 0)
+
+            // wantsUpdateLayer -> false ensures AppKit calls drawRect: -> cell.draw(withFrame:in:)
+            let wulBlock: @convention(block) (NSButton) -> Bool = { _ in false }
+            class_addMethod(btnCustomClass, NSSelectorFromString("wantsUpdateLayer"), imp_implementationWithBlock(wulBlock), "B@:")
+
+            // updateTrackingAreas -> installs tracking area covering full button bounds
+            let utaBlock: @convention(block) (NSButton) -> Void = { b in
+                b.trackingAreas.forEach(b.removeTrackingArea)
+                let area = NSTrackingArea(
+                    rect: b.bounds,
+                    options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                    owner: b
+                )
+                b.addTrackingArea(area)
+            }
+            class_addMethod(btnCustomClass, NSSelectorFromString("updateTrackingAreas"), imp_implementationWithBlock(utaBlock), "v@:")
+
+            // mouseEntered -> mark hovered (triggers 'x' glyph)
+            let meBlock: @convention(block) (NSButton, AnyObject) -> Void = { b, _ in
+                NativeCloseWidgetHelper.setHovered(true, on: b)
+            }
+            class_addMethod(btnCustomClass, NSSelectorFromString("mouseEntered:"), imp_implementationWithBlock(meBlock), "v@:@")
+
+            // mouseExited -> unmark hovered
+            let mxBlock: @convention(block) (NSButton, AnyObject) -> Void = { b, _ in
+                NativeCloseWidgetHelper.setHovered(false, on: b)
+            }
+            class_addMethod(btnCustomClass, NSSelectorFromString("mouseExited:"), imp_implementationWithBlock(mxBlock), "v@:@")
+
+            objc_registerClassPair(btnCustomClass!)
+        }
+        object_setClass(button, btnCustomClass!)
+
+        // 2. Subclass cell to provide macOS CoreTheme hover state (4 = rollover with 'x' icon) and scaleFactor proxy
+        guard let cell = button.cell else { return }
+        let cellSubclassName = "PocketHoverThemeCloseCell"
+        var cellCustomClass: AnyClass? = objc_getClass(cellSubclassName) as? AnyClass
+        if cellCustomClass == nil {
+            cellCustomClass = objc_allocateClassPair(type(of: cell), cellSubclassName, 0)
+            let block: @convention(block) (AnyObject) -> Int = { obj in
+                let isPressed = (obj as? NSCell)?.isHighlighted ?? false
+                if isPressed { return 2 }
+                let isHovered = objc_getAssociatedObject(obj, &NativeCloseWidgetHelper.key) as? Bool ?? false
+                return isHovered ? 4 : 0
+            }
+            let imp = imp_implementationWithBlock(block)
+            class_addMethod(cellCustomClass, NSSelectorFromString("_bezelInteractionState"), imp, "q@:")
+
+            // Provide real window scale factor to eliminate CoreUI 'scaleFactor == 0.000000' warnings
+            let frameBlock: @convention(block) (AnyObject, AnyObject) -> AnyObject? = { _, view in
+                guard let v = view as? NSView else { return nil }
+                return NativeThemeFrameProxy(targetView: v)
+            }
+            class_addMethod(cellCustomClass, NSSelectorFromString("_containingThemeFrameFromView:"), imp_implementationWithBlock(frameBlock), "@@:@")
+
+            objc_registerClassPair(cellCustomClass!)
+        }
+        object_setClass(cell, cellCustomClass!)
+        button.updateTrackingAreas()
+    }
+
+    static func setHovered(_ hovered: Bool, on button: NSButton) {
+        guard let cell = button.cell else { return }
+        let current = objc_getAssociatedObject(cell, &NativeCloseWidgetHelper.key) as? Bool ?? false
+        guard current != hovered else { return }
+        objc_setAssociatedObject(cell, &NativeCloseWidgetHelper.key, hovered, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        button.needsDisplay = true
+    }
+}
+
+struct NativeWindowCloseButton: NSViewRepresentable {
+    let action: () -> Void
+    var isHovered: Bool = false
+    var disabled: Bool = false
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        guard let button = NSWindow.standardWindowButton(.closeButton, for: [.titled, .closable]) else {
+            return NSButton()
+        }
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.buttonClicked)
+        button.isEnabled = !disabled
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentHuggingPriority(.required, for: .vertical)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .vertical)
+        NativeCloseWidgetHelper.setup(button: button)
+        return button
+    }
+
+    func updateNSView(_ nsView: NSButton, context: Context) {
+        context.coordinator.action = action
+        nsView.target = context.coordinator
+        nsView.action = #selector(Coordinator.buttonClicked)
+        nsView.isEnabled = !disabled
+        NativeCloseWidgetHelper.setHovered(isHovered, on: nsView)
+        nsView.updateTrackingAreas()
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+        }
+
+        @objc func buttonClicked() {
+            action()
+        }
+    }
+}
+
+struct ArrowCursorOverlayView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        ArrowOverlay()
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class ArrowOverlay: NSView {
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            setupTracking()
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        private func setupTracking() {
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            setupTracking()
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            NSCursor.arrow.set()
+        }
+        override func mouseMoved(with event: NSEvent) {
+            NSCursor.arrow.set()
+        }
+        override func mouseEntered(with event: NSEvent) {
+            NSCursor.arrow.set()
+        }
+    }
+}
+
 struct NoteEditorView: View {
     let noteID: UUID
     let model: AppModel
     let preferences: AppPreferences
     let bridge: EditorBridge
+    var activeTabFrame: CGRect? = nil
     let onClose: () -> Void
     let onMicrophone: () -> Void
     let dictationState: DictationState
@@ -17,26 +270,79 @@ struct NoteEditorView: View {
     @State private var usesCustomTitle = false
     @State private var showsColorChooser = false
     @State private var showsFormatChooser = false
+    @State private var isCloseHovered = false
+    @State private var cardFrame: CGRect = .zero
     @FocusState private var titleFocused: Bool
 
     private var note: Note? { model.note(id: noteID) }
     private var palette: NotePaletteColor { note.map(NotePalette.color(for:)) ?? NotePalette.color(0) }
     private var editableTitle: String { note?.customTitle ?? note?.title ?? "" }
 
+    private var arrowOffset: CGFloat {
+        let cornerRadius: CGFloat = 14
+        let arrowMargin: CGFloat = 20
+        guard let tabFrame = activeTabFrame, cardFrame.width > 0, cardFrame.height > 0 else {
+            return preferences.edge == .bottom ? preferences.noteSize.width / 2 : preferences.noteSize.height / 2
+        }
+        switch preferences.edge {
+        case .bottom:
+            let rawX = tabFrame.midX - cardFrame.minX
+            return min(max(rawX, cornerRadius + arrowMargin), cardFrame.width - cornerRadius - arrowMargin)
+        case .left, .right:
+            let rawY = tabFrame.midY - cardFrame.minY
+            return min(max(rawY, cornerRadius + arrowMargin), cardFrame.height - cornerRadius - arrowMargin)
+        }
+    }
+
     var body: some View {
+        ZStack {
+            NoteCardArrowShape(edge: preferences.edge, offset: arrowOffset)
+                .fill(palette.paper)
+
+            editorContent
+                .background(palette.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .foregroundStyle(palette.ink)
+        .shadow(
+            color: .black.opacity(0.18),
+            radius: 12,
+            x: preferences.edge == .right ? -5 : (preferences.edge == .left ? 5 : 0),
+            y: preferences.edge == .bottom ? -5 : 5
+        )
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { cardFrame = geo.frame(in: .named("DeckContainer")) }
+                    .onChange(of: geo.frame(in: .named("DeckContainer"))) { _, newFrame in
+                        cardFrame = newFrame
+                    }
+            }
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: arrowOffset)
+        .onAppear {
+            let initialBody = note?.body ?? ""
+            draft = initialBody
+            titleDraft = editableTitle
+            usesCustomTitle = note?.customTitle != nil
+        }
+        .onChange(of: draft) { _, _ in
+            guard !bridge.isDictating else { return }
+            saveTask?.cancel()
+            saveTask = Task {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                persistContent()
+            }
+        }
+    }
+
+    private var editorContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 24, height: 24)
-                        .background(Circle().fill(Color.red.opacity(0.88)))
-                        .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
-                }
-                .buttonStyle(.plain)
-                .disabled(bridge.isDictating)
-                .help("Close note")
+                NativeWindowCloseButton(action: close, isHovered: isCloseHovered, disabled: bridge.isDictating)
+                    .frame(width: 14, height: 16)
+                    .onHover { isCloseHovered = $0 }
 
                 TextField("New note", text: $titleDraft)
                     .font(.headline)
@@ -102,6 +408,12 @@ struct NoteEditorView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .frame(height: 42)
+            .overlay(ArrowCursorOverlayView())
+            .onHover { isHovering in
+                if isHovering {
+                    NSCursor.arrow.set()
+                }
+            }
 
             Divider().overlay(palette.accent.opacity(0.45))
 
@@ -113,36 +425,6 @@ struct NoteEditorView: View {
                 bridge: bridge,
                 onExit: close
             )
-        }
-        .background(palette.paper)
-        .foregroundStyle(palette.ink)
-        .clipShape(UnevenRoundedRectangle(
-            topLeadingRadius: preferences.edge == .right || preferences.edge == .bottom ? 12 : 0,
-            bottomLeadingRadius: preferences.edge == .right ? 12 : 0,
-            bottomTrailingRadius: preferences.edge == .left ? 12 : 0,
-            topTrailingRadius: preferences.edge == .left || preferences.edge == .bottom ? 12 : 0,
-            style: .continuous
-        ))
-        .shadow(
-            color: .black.opacity(0.18),
-            radius: 12,
-            x: preferences.edge == .right ? -5 : (preferences.edge == .left ? 5 : 0),
-            y: preferences.edge == .bottom ? -5 : 5
-        )
-        .onAppear {
-            let initialBody = note?.body ?? ""
-            draft = initialBody
-            titleDraft = editableTitle
-            usesCustomTitle = note?.customTitle != nil
-        }
-        .onChange(of: draft) { _, _ in
-            guard !bridge.isDictating else { return }
-            saveTask?.cancel()
-            saveTask = Task {
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled else { return }
-                persistContent()
-            }
         }
         .onChange(of: titleDraft) { _, value in
             guard titleFocused else { return }

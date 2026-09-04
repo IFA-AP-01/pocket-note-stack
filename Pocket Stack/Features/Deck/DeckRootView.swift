@@ -37,6 +37,9 @@ struct DeckRootView: View {
         }
     }
 
+    @State private var activeTabFrame: CGRect? = nil
+    private var cardGap: CGFloat { 10 }
+
     private var fan: some View {
         NoteFan(
             notes: visibleNotes,
@@ -54,20 +57,34 @@ struct DeckRootView: View {
             onPrevious: { state.tabWindowStart = window.movingPrevious().startIndex },
             onNext: { state.tabWindowStart = window.movingNext().startIndex },
             onCreate: controller.createNote,
+            onDelete: controller.deleteNote,
             onInteractionChange: controller.fanInteractionChanged
         )
+        .onHover { isHovering in
+            if isHovering {
+                NSCursor.arrow.set()
+            }
+        }
     }
 
     @ViewBuilder private var activeDeck: some View {
+        deckLayout
+            .coordinateSpace(name: "DeckContainer")
+            .onPreferenceChange(ActiveTabFramePreferenceKey.self) { frame in
+                activeTabFrame = frame
+            }
+    }
+
+    @ViewBuilder private var deckLayout: some View {
         switch edge {
         case .left:
-            HStack(spacing: 0) { fan; sideContent }
+            HStack(spacing: cardGap) { fan; sideContent }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         case .right:
-            HStack(spacing: 0) { sideContent; fan }
+            HStack(spacing: cardGap) { sideContent; fan }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         case .bottom:
-            VStack(spacing: 0) { sideContent; fan }
+            VStack(spacing: cardGap) { sideContent; fan }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
     }
@@ -79,6 +96,7 @@ struct DeckRootView: View {
                 model: model,
                 preferences: preferences,
                 bridge: state.editorBridge,
+                activeTabFrame: activeTabFrame,
                 onClose: controller.closeExpanded,
                 onMicrophone: { controller.toggleDictation(noteID: id) },
                 dictationState: state.dictationState

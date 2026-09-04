@@ -37,12 +37,20 @@ struct LibraryView: View {
                             .tag(note.id)
                             .contextMenu {
                                 Button(note.isArchived ? "Restore" : "Archive") {
-                                    model.setArchived(id: note.id, !note.isArchived)
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        model.setArchived(id: note.id, !note.isArchived)
+                                    }
                                 }
                                 Button("Delete", role: .destructive) {
-                                    model.delete(id: note.id)
+                                    deleteNote(id: note.id)
                                 }
                             }
+                    }
+                }
+                .animation(.easeInOut(duration: 0.25), value: notes.map(\.id))
+                .onDeleteCommand {
+                    if let selection {
+                        deleteNote(id: selection)
                     }
                 }
             }
@@ -57,6 +65,20 @@ struct LibraryView: View {
                     .pickerStyle(.menu)
 
                     Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            if filter == .archived {
+                                filter = .all
+                            }
+                            let newNote = model.create()
+                            selection = newNote.id
+                        }
+                    } label: {
+                        Label("New Note", systemImage: "square.and.pencil")
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .help("New note (⌘N)")
+
+                    Button {
                         NoteTransfer.importFiles(into: model)
                     } label: {
                         Label("Import", systemImage: "square.and.arrow.down")
@@ -64,23 +86,39 @@ struct LibraryView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 420)
-            .onChange(of: notes) { _, newNotes in
-                if selection == nil || !newNotes.contains(where: { $0.id == selection }) {
+            .onChange(of: notes) { oldNotes, newNotes in
+                if let cur = selection, !newNotes.contains(where: { $0.id == cur }) {
+                    if let oldIndex = oldNotes.firstIndex(where: { $0.id == cur }) {
+                        let nextIndex = min(oldIndex, newNotes.count - 1)
+                        selection = nextIndex >= 0 ? newNotes[nextIndex].id : nil
+                    } else {
+                        selection = newNotes.first?.id
+                    }
+                } else if selection == nil, !newNotes.isEmpty {
                     selection = newNotes.first?.id
                 }
             }
         } detail: {
             if let selection, let note = model.note(id: selection) {
                 LibraryNoteDetail(note: note, model: model) {
-                    self.selection = nil
+                    deleteNote(id: note.id)
                 }
                 .id(note.id)
             } else {
-                ContentUnavailableView(
-                    "Select a note",
-                    systemImage: "note.text",
-                    description: Text("Choose a note from the list to view and edit it.")
-                )
+                ContentUnavailableView {
+                    Label("Select a note", systemImage: "note.text")
+                } description: {
+                    Text("Choose a note from the list or create a new one.")
+                } actions: {
+                    Button("Create Note") {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            if filter == .archived { filter = .all }
+                            let newNote = model.create()
+                            selection = newNote.id
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
         }
         .onAppear {
@@ -92,6 +130,30 @@ struct LibraryView: View {
         .frame(minWidth: 920, minHeight: 620)
     }
 
+    private func deleteNote(id: UUID) {
+        let currentNotes = notes
+        let nextSelection: UUID?
+        if selection == id {
+            if let index = currentNotes.firstIndex(where: { $0.id == id }) {
+                if index + 1 < currentNotes.count {
+                    nextSelection = currentNotes[index + 1].id
+                } else if index > 0 {
+                    nextSelection = currentNotes[index - 1].id
+                } else {
+                    nextSelection = nil
+                }
+            } else {
+                nextSelection = nil
+            }
+        } else {
+            nextSelection = selection
+        }
+
+        withAnimation(.easeInOut(duration: 0.25)) {
+            selection = nextSelection
+            model.delete(id: id)
+        }
+    }
 }
 
 private struct LibraryNoteDetail: View {
@@ -100,6 +162,7 @@ private struct LibraryNoteDetail: View {
     let onDelete: () -> Void
     @State private var draft: String
     @State private var bridge = EditorBridge()
+    @State private var isDeleted = false
 
     init(note: Note, model: AppModel, onDelete: @escaping () -> Void) {
         noteID = note.id
@@ -115,14 +178,13 @@ private struct LibraryNoteDetail: View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
                 header
-                EditorFormattingBar(palette: palette, onCommand: handleCommand)
+                EditorFormattingBar(onCommand: handleCommand)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .foregroundStyle(palette.ink)
-            .background(palette.paper)
+            .background(.bar)
 
-            Divider().overlay(palette.accent.opacity(0.35))
+            Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -158,8 +220,14 @@ private struct LibraryNoteDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .onChange(of: draft) { _, value in model.updateBody(id: noteID, body: value) }
-        .onDisappear { model.updateBody(id: noteID, body: draft) }
+        .onChange(of: draft) { _, value in
+            guard !isDeleted else { return }
+            model.updateBody(id: noteID, body: value)
+        }
+        .onDisappear {
+            guard !isDeleted else { return }
+            model.updateBody(id: noteID, body: draft)
+        }
     }
 
     private var header: some View {
@@ -169,8 +237,13 @@ private struct LibraryNoteDetail: View {
                 systemImage: note?.isArchived == true ? "archivebox.fill" : "square.stack.3d.up.fill"
             )
             .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
             Spacer()
-            if let note { Text(note.modifiedAt, style: .relative).font(.subheadline).foregroundStyle(palette.ink.opacity(0.65)) }
+            if let note {
+                Text(note.modifiedAt, style: .relative)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             Button(note?.isArchived == true ? "Restore" : "Archive") {
                 guard let note else { return }
                 model.setArchived(id: noteID, !note.isArchived)
@@ -184,10 +257,15 @@ private struct LibraryNoteDetail: View {
                 }
             }
             Button("Delete", role: .destructive) {
-                model.delete(id: noteID)
-                onDelete()
+                handleDelete()
             }
         }
+    }
+
+    private func handleDelete() {
+        guard !isDeleted else { return }
+        isDeleted = true
+        onDelete()
     }
 
     private func handleCommand(_ command: EditorCommand) {
@@ -197,8 +275,7 @@ private struct LibraryNoteDetail: View {
         case .togglePin: model.togglePin(id: noteID)
         case .cycleColor: model.cycleColor(id: noteID)
         case .delete:
-            model.delete(id: noteID)
-            onDelete()
+            handleDelete()
         case .archive:
             guard let note else { return }
             model.setArchived(id: noteID, !note.isArchived)

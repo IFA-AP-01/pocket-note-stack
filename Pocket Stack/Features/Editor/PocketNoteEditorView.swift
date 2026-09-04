@@ -209,6 +209,14 @@ final class PocketTextView: NSTextView {
         NSCursor.iBeam.set()
     }
 
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        let loc = convert(event.locationInWindow, from: nil)
+        if !visibleRect.contains(loc) {
+            NSCursor.arrow.set()
+        }
+    }
+
     override func resetCursorRects() {
         super.resetCursorRects()
         discardCursorRects()

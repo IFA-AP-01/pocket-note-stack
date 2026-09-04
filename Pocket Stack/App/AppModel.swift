@@ -22,7 +22,9 @@ final class AppModel {
             let stream = await repository.snapshots()
             for await snapshot in stream {
                 guard let self else { return }
-                notes = snapshot
+                if notes != snapshot {
+                    notes = snapshot
+                }
                 if snapshot.isEmpty { await seedWelcomeNote() }
             }
         }
@@ -37,6 +39,7 @@ final class AppModel {
     func create(body: String = "") -> Note {
         let order = (activeNotes.map(\.sortOrder).min() ?? 0) - 1
         let note = Note(body: body, colorIndex: notes.count % NotePalette.colors.count, sortOrder: order)
+        notes.insert(note, at: 0)
         persist(note)
         return note
     }
@@ -88,6 +91,7 @@ final class AppModel {
     func delete(id: UUID) {
         guard let note = note(id: id) else { return }
         pendingDelete = note
+        notes.removeAll { $0.id == id }
         Task { await perform { try await self.repository.delete(id: id) } }
         undoTask?.cancel()
         undoTask = Task { [weak self] in
@@ -101,6 +105,7 @@ final class AppModel {
         guard let note = pendingDelete else { return }
         undoTask?.cancel()
         pendingDelete = nil
+        notes.append(note)
         persist(note)
     }
 

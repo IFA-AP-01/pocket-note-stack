@@ -16,6 +16,7 @@ struct NoteFan: View {
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onCreate: () -> Void
+    let onDelete: (UUID) -> Void
     let onInteractionChange: (Bool) -> Void
 
     @State private var revealed = false
@@ -111,7 +112,8 @@ struct NoteFan: View {
                     isHovered: hoveredID == note.id,
                     isPreviewed: previewedID == note.id,
                     onHoverChange: { updateHover(note: note, inside: $0) },
-                    action: { open(note.id) }
+                    action: { open(note.id) },
+                    onDelete: { onDelete(note.id) }
                 )
                 .draggable(note.id.uuidString)
                 .dropDestination(for: String.self) { values, _ in
