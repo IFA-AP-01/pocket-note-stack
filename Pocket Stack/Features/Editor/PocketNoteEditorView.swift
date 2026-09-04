@@ -165,7 +165,11 @@ final class PocketTextView: NSTextView {
         if ok {
             EditorBridge.setLastActive(self)
             window?.invalidateCursorRects(for: self)
-            NSCursor.iBeam.set()
+            let mouseLoc = window?.mouseLocationOutsideOfEventStream ?? .zero
+            let loc = convert(mouseLoc, from: nil)
+            if visibleRect.contains(loc) {
+                NSCursor.iBeam.set()
+            }
         }
         return ok
     }
@@ -196,25 +200,35 @@ final class PocketTextView: NSTextView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        NSCursor.iBeam.set()
+        let loc = convert(event.locationInWindow, from: nil)
+        if visibleRect.contains(loc) {
+            NSCursor.iBeam.set()
+        } else {
+            NSCursor.arrow.set()
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        NSCursor.iBeam.set()
+        let loc = convert(event.locationInWindow, from: nil)
+        if visibleRect.contains(loc) {
+            NSCursor.iBeam.set()
+        } else {
+            NSCursor.arrow.set()
+        }
     }
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        NSCursor.iBeam.set()
+        let loc = convert(event.locationInWindow, from: nil)
+        if visibleRect.contains(loc) {
+            NSCursor.iBeam.set()
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        let loc = convert(event.locationInWindow, from: nil)
-        if !visibleRect.contains(loc) {
-            NSCursor.arrow.set()
-        }
+        NSCursor.arrow.set()
     }
 
     override func resetCursorRects() {

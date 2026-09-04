@@ -119,6 +119,7 @@ private final class NativeCloseWidgetHelper {
             // mouseEntered -> mark hovered (triggers 'x' glyph)
             let meBlock: @convention(block) (NSButton, AnyObject) -> Void = { b, _ in
                 NativeCloseWidgetHelper.setHovered(true, on: b)
+                NSCursor.arrow.set()
             }
             class_addMethod(btnCustomClass, NSSelectorFromString("mouseEntered:"), imp_implementationWithBlock(meBlock), "v@:@")
 
@@ -127,6 +128,13 @@ private final class NativeCloseWidgetHelper {
                 NativeCloseWidgetHelper.setHovered(false, on: b)
             }
             class_addMethod(btnCustomClass, NSSelectorFromString("mouseExited:"), imp_implementationWithBlock(mxBlock), "v@:@")
+
+            // resetCursorRects -> add arrow cursor rect
+            let rcrBlock: @convention(block) (NSButton) -> Void = { b in
+                b.discardCursorRects()
+                b.addCursorRect(b.bounds, cursor: .arrow)
+            }
+            class_addMethod(btnCustomClass, NSSelectorFromString("resetCursorRects"), imp_implementationWithBlock(rcrBlock), "v@:")
 
             objc_registerClassPair(btnCustomClass!)
         }
@@ -211,45 +219,6 @@ struct NativeWindowCloseButton: NSViewRepresentable {
 
         @objc func buttonClicked() {
             action()
-        }
-    }
-}
-
-struct ArrowCursorOverlayView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        ArrowOverlay()
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    final class ArrowOverlay: NSView {
-        override init(frame frameRect: NSRect) {
-            super.init(frame: frameRect)
-            setupTracking()
-        }
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-        private func setupTracking() {
-            trackingAreas.forEach(removeTrackingArea)
-            addTrackingArea(NSTrackingArea(rect: bounds, options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
-        }
-
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            setupTracking()
-        }
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            nil
-        }
-
-        override func cursorUpdate(with event: NSEvent) {
-            NSCursor.arrow.set()
-        }
-        override func mouseMoved(with event: NSEvent) {
-            NSCursor.arrow.set()
-        }
-        override func mouseEntered(with event: NSEvent) {
-            NSCursor.arrow.set()
         }
     }
 }
@@ -408,7 +377,6 @@ struct NoteEditorView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .frame(height: 42)
-            .overlay(ArrowCursorOverlayView())
             .onHover { isHovering in
                 if isHovering {
                     NSCursor.arrow.set()

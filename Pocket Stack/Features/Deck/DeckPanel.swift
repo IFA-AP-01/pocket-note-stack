@@ -4,6 +4,7 @@ import SwiftUI
 final class DeckPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override var areCursorRectsEnabled: Bool { true }
 
     init() {
         super.init(
@@ -27,6 +28,11 @@ final class DeckPanel: NSPanel {
 final class DeckTrackingView: NSView {
     weak var controller: DeckController?
 
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
@@ -47,4 +53,9 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     required init(rootView: Content) { super.init(rootView: rootView) }
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
 }
