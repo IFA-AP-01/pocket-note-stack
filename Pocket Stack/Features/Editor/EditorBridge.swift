@@ -1,5 +1,4 @@
 import AppKit
-import MarkdownEngine
 import Observation
 
 @MainActor
@@ -9,75 +8,79 @@ final class EditorBridge {
     private var anchorRange = NSRange(location: 0, length: 0)
     private var provisionalRange: NSRange?
     private var committedLength = 0
+    weak var activeTextView: PocketTextView?
 
-    func showFind() { activeTextView()?.performFindPanelAction(NSMenuItem()) }
+    func showFind() { currentTextView()?.performFindPanelAction(NSMenuItem()) }
 
     @discardableResult
     func performBlockCommand(_ command: EditorCommand) -> Bool {
-        guard let textView = activeTextView() as? WYSIWYGTextView else { return false }
-        return textView.commandHandler?(command, textView) == true
+        guard let textView = currentTextView() else { return false }
+        switch command {
+        case .formatTitle:
+            textView.setTitle()
+            return true
+        case .formatHeading:
+            textView.setHeading()
+            return true
+        case .formatSubheading:
+            textView.setSubheading()
+            return true
+        case .formatBody:
+            textView.setBody()
+            return true
+        case .formatBulletList:
+            textView.toggleBulletList()
+            return true
+        case .formatDashList:
+            textView.toggleDashedList()
+            return true
+        case .formatNumberList:
+            textView.toggleNumberedList()
+            return true
+        case .formatCheckList:
+            textView.toggleChecklist()
+            return true
+        case .formatBlockQuote:
+            textView.toggleBlockQuote()
+            return true
+        case .formatBold:
+            textView.toggleBold()
+            return true
+        case .formatItalic:
+            textView.toggleItalic()
+            return true
+        case .formatUnderline:
+            textView.toggleUnderline()
+            return true
+        case .formatStrikethrough:
+            textView.toggleStrikethrough()
+            return true
+        case .formatMonospaced:
+            textView.setMonostyled()
+            return true
+        case .toggleTask, .formatCheckList:
+            textView.toggleChecklist()
+            return true
+        default:
+            return false
+        }
     }
 
     @discardableResult
     func insertImageBlock(_ source: String) -> Bool {
-        guard let textView = activeTextView() as? WYSIWYGTextView else { return false }
-        textView.imageHandler?(source)
-        return true
+        if let tv = currentTextView() {
+            tv.insertImageAttachment(filename: source, alt: "Image")
+            return true
+        }
+        return false
     }
 
     func toggleTask() {
-        guard let textView = activeTextView() else { return }
-        let source = textView.string as NSString
-        let selected = textView.selectedRange()
-        let lineRange = source.lineRange(for: NSRange(location: min(selected.location, source.length), length: 0))
-        let line = source.substring(with: lineRange).trimmingCharacters(in: .newlines)
-        let replacement = NoteTask.toMarkdown(NoteTask.toggle(line: NoteTask.fromMarkdown(line)))
-            + (source.substring(with: lineRange).hasSuffix("\n") ? "\n" : "")
-        if textView.shouldChangeText(in: lineRange, replacementString: replacement) {
-            textView.textStorage?.replaceCharacters(in: lineRange, with: replacement)
-            textView.didChangeText()
-        }
+        currentTextView()?.toggleChecklist()
     }
-    
-    func applyWrap(prefix: String, suffix: String) {
-        guard let textView = activeTextView() else { return }
-        let selected = textView.selectedRange()
-        let text = (textView.string as NSString).substring(with: selected)
-        let replacement = prefix + text + suffix
-        if textView.shouldChangeText(in: selected, replacementString: replacement) {
-            textView.textStorage?.replaceCharacters(in: selected, with: replacement)
-            textView.didChangeText()
-            textView.setSelectedRange(NSRange(location: selected.location + prefix.count, length: selected.length))
-        }
-    }
-    
-    func togglePrefix(_ prefix: String) {
-        guard let textView = activeTextView() else { return }
-        let source = textView.string as NSString
-        let selected = textView.selectedRange()
-        let lineRange = source.lineRange(for: NSRange(location: min(selected.location, source.length), length: 0))
-        var line = source.substring(with: lineRange)
-        let hasNewline = line.hasSuffix("\n")
-        if hasNewline { line.removeLast() }
-        
-        // Remove existing standard prefixes before applying new one
-        let existingPrefixes = ["### ", "## ", "# ", "- [ ] ", "- [x] ", "- [X] ", "* ", "- ", "1. ", "☐ ", "☑ "]
-        for ep in existingPrefixes {
-            if line.hasPrefix(ep) {
-                line.removeFirst(ep.count)
-                break
-            }
-        }
-        
-        let replacement = (prefix.isEmpty ? line : prefix + line) + (hasNewline ? "\n" : "")
-        if textView.shouldChangeText(in: lineRange, replacementString: replacement) {
-            textView.textStorage?.replaceCharacters(in: lineRange, with: replacement)
-            textView.didChangeText()
-        }
-    }
-    
+
     func insertText(_ text: String) {
-        guard let textView = activeTextView() else { return }
+        guard let textView = currentTextView() else { return }
         let selected = textView.selectedRange()
         if textView.shouldChangeText(in: selected, replacementString: text) {
             textView.textStorage?.replaceCharacters(in: selected, with: text)
@@ -86,8 +89,10 @@ final class EditorBridge {
         }
     }
 
+    // MARK: - Voice Dictation
+
     func beginDictation() {
-        guard let textView = activeTextView(), !isDictating else { return }
+        guard let textView = currentTextView(), !isDictating else { return }
         isDictating = true
         anchorRange = textView.selectedRange()
         provisionalRange = nil
@@ -98,7 +103,7 @@ final class EditorBridge {
     }
 
     func applyInterim(_ text: String) {
-        guard let textView = activeTextView(), isDictating else { return }
+        guard let textView = currentTextView(), isDictating else { return }
         let range = provisionalRange ?? NSRange(location: anchorRange.location + committedLength, length: anchorRange.length)
         textView.textStorage?.replaceCharacters(in: range, with: text)
         provisionalRange = NSRange(location: range.location, length: (text as NSString).length)
@@ -106,7 +111,7 @@ final class EditorBridge {
     }
 
     func commitFinal(_ text: String) {
-        guard let textView = activeTextView(), isDictating else { return }
+        guard let textView = currentTextView(), isDictating else { return }
         let range = provisionalRange ?? NSRange(location: anchorRange.location + committedLength, length: committedLength == 0 ? anchorRange.length : 0)
         let suffix = text.isEmpty || text.hasSuffix(" ") || text.hasSuffix("\n") ? "" : " "
         let replacement = text + suffix
@@ -118,7 +123,7 @@ final class EditorBridge {
     }
 
     func finishDictation(discardInterim: Bool) {
-        guard let textView = activeTextView(), isDictating else { return }
+        guard let textView = currentTextView(), isDictating else { return }
         if discardInterim, let provisionalRange {
             textView.textStorage?.replaceCharacters(in: provisionalRange, with: "")
         }
@@ -129,15 +134,15 @@ final class EditorBridge {
         textView.didChangeText()
     }
 
-    private static weak var globalLastActiveTextView: NSTextView?
+    private static weak var globalLastActiveTextView: PocketTextView?
 
-    static func setLastActive(_ textView: NSTextView) {
+    static func setLastActive(_ textView: PocketTextView) {
         globalLastActiveTextView = textView
     }
 
-    private func activeTextView() -> NSTextView? {
-        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
-           textView.delegate is NativeTextViewCoordinator || textView is WYSIWYGTextView {
+    private func currentTextView() -> PocketTextView? {
+        if let activeTextView { return activeTextView }
+        if let textView = NSApp.keyWindow?.firstResponder as? PocketTextView {
             Self.globalLastActiveTextView = textView
             return textView
         }

@@ -20,6 +20,7 @@ final class DeckPanel: NSPanel {
         isReleasedWhenClosed = false
         animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        acceptsMouseMovedEvents = true
     }
 }
 

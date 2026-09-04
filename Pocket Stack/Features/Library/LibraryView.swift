@@ -127,14 +127,15 @@ private struct LibraryNoteDetail: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 12) {
-                    Text(note?.displayTitle ?? "Note").font(.title2.bold())
-                        BlockEditorView(
-                            markdown: $draft,
+                        Text(note?.displayTitle ?? "Note").font(.title2.bold())
+                        PocketNoteEditorView(
+                            text: $draft,
                             palette: palette,
-                            fontName: AppPreferences.shared.noteFontName,
                             fontSize: AppPreferences.shared.noteFontSize,
-                            scrolls: false
+                            fontName: AppPreferences.shared.noteFontName,
+                            bridge: bridge
                         )
+                        .frame(minHeight: 220)
                     }
                     .padding(20)
                     .foregroundStyle(palette.ink)
@@ -193,7 +194,6 @@ private struct LibraryNoteDetail: View {
         if bridge.performBlockCommand(command) { return }
         switch command {
         case .escape: break
-        case .toggleTask: bridge.toggleTask()
         case .togglePin: model.togglePin(id: noteID)
         case .cycleColor: model.cycleColor(id: noteID)
         case .delete:
@@ -204,21 +204,6 @@ private struct LibraryNoteDetail: View {
             model.setArchived(id: noteID, !note.isArchived)
         case .increaseFont: AppPreferences.shared.noteFontSize = min(30, AppPreferences.shared.noteFontSize + 1.5)
         case .decreaseFont: AppPreferences.shared.noteFontSize = max(10, AppPreferences.shared.noteFontSize - 1.5)
-        case .formatTitle: bridge.togglePrefix("# ")
-        case .formatHeading: bridge.togglePrefix("## ")
-        case .formatSubheading: bridge.togglePrefix("### ")
-        case .formatBody: bridge.togglePrefix("")
-        case .formatMonospaced: bridge.applyWrap(prefix: "`", suffix: "`")
-        case .formatBold: bridge.applyWrap(prefix: "**", suffix: "**")
-        case .formatItalic: bridge.applyWrap(prefix: "*", suffix: "*")
-        case .formatStrikethrough: bridge.applyWrap(prefix: "~~", suffix: "~~")
-        case .formatUnderline: bridge.applyWrap(prefix: "<u>", suffix: "</u>")
-        case .formatBulletList: bridge.togglePrefix("* ")
-        case .formatDashList: bridge.togglePrefix("- ")
-        case .formatNumberList: bridge.togglePrefix("1. ")
-        case .formatCheckList: bridge.toggleTask()
-        case .insertTable:
-            bridge.insertText("\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n")
         case .insertImage:
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.image]
@@ -226,12 +211,10 @@ private struct LibraryNoteDetail: View {
             panel.canChooseDirectories = false
             panel.message = "Choose an image to add to this note"
             if panel.runModal() == .OK, let url = panel.url, let filename = AttachmentManager.shared.saveFile(from: url) {
-                if !bridge.insertImageBlock(filename) { bridge.insertText("![Image](\(filename))") }
+                bridge.insertImageBlock(filename)
             }
-        case .insertLink: bridge.applyWrap(prefix: "[", suffix: "](https://)")
-        case .insertCodeBlock: bridge.applyWrap(prefix: "```\n", suffix: "\n```")
-        case .insertInlineMath: bridge.applyWrap(prefix: "$", suffix: "$")
-        case .insertDisplayMath: bridge.applyWrap(prefix: "$$\n", suffix: "\n$$")
+        default:
+            break
         }
     }
 }

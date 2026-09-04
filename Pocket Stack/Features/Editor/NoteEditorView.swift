@@ -22,6 +22,7 @@ struct NoteEditorView: View {
     private var note: Note? { model.note(id: noteID) }
     private var palette: NotePaletteColor { note.map(NotePalette.color(for:)) ?? NotePalette.color(0) }
     private var editableTitle: String { note?.customTitle ?? note?.title ?? "" }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -56,15 +57,18 @@ struct NoteEditorView: View {
                     .onSubmit { saveContent() }
                     .onExitCommand(perform: close)
                     .layoutPriority(1)
+
                 if dictationState != .idle {
                     Text(dictationLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
                 Button(action: onMicrophone) {
                     Image(systemName: dictationState == .idle ? "mic" : "stop.circle.fill")
                 }
                 .help(dictationState == .idle ? "Start dictation" : "Stop dictation")
+
                 Button { handleCommand(.toggleTask) } label: { Image(systemName: "checklist") }
                     .disabled(bridge.isDictating)
                 
@@ -84,26 +88,30 @@ struct NoteEditorView: View {
                     Image(systemName: note?.isPinned == true ? "pin.fill" : "pin")
                 }
                 .disabled(bridge.isDictating)
+
                 Button { showsColorChooser.toggle() } label: {
                     Image(systemName: "paintpalette.fill")
                         .foregroundStyle(palette.accent)
                 }
-                    .disabled(bridge.isDictating)
-                    .help("Choose note colour")
-                    .popover(isPresented: $showsColorChooser, arrowEdge: .top) {
-                        NoteColorChooser(noteID: noteID, note: note, model: model, palette: palette)
-                    }
+                .disabled(bridge.isDictating)
+                .help("Choose note colour")
+                .popover(isPresented: $showsColorChooser, arrowEdge: .top) {
+                    NoteColorChooser(noteID: noteID, note: note, model: model, palette: palette)
+                }
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .frame(height: 42)
 
             Divider().overlay(palette.accent.opacity(0.45))
-            BlockEditorView(
-                markdown: $draft,
+
+            PocketNoteEditorView(
+                text: $draft,
                 palette: palette,
+                fontSize: preferences.noteFontSize,
                 fontName: preferences.noteFontName,
-                fontSize: preferences.noteFontSize
+                bridge: bridge,
+                onExit: close
             )
         }
         .background(palette.paper)
@@ -122,7 +130,8 @@ struct NoteEditorView: View {
             y: preferences.edge == .bottom ? -5 : 5
         )
         .onAppear {
-            draft = note?.body ?? ""
+            let initialBody = note?.body ?? ""
+            draft = initialBody
             titleDraft = editableTitle
             usesCustomTitle = note?.customTitle != nil
         }
@@ -195,42 +204,26 @@ struct NoteEditorView: View {
         switch command {
         case .escape:
             if bridge.isDictating { onMicrophone() } else { close() }
-        case .toggleTask: if !bridge.isDictating { bridge.toggleTask() }
-        case .togglePin: if !bridge.isDictating { model.togglePin(id: noteID) }
-        case .cycleColor: if !bridge.isDictating { model.cycleColor(id: noteID) }
+        case .togglePin:
+            if !bridge.isDictating { model.togglePin(id: noteID) }
+        case .cycleColor:
+            if !bridge.isDictating { model.cycleColor(id: noteID) }
         case .delete:
             guard !bridge.isDictating else { return }
-            model.delete(id: noteID); onClose()
+            model.delete(id: noteID)
+            onClose()
         case .archive:
             guard !bridge.isDictating else { return }
-            model.setArchived(id: noteID, true); onClose()
-        case .increaseFont: preferences.noteFontSize = min(30, preferences.noteFontSize + 1.5)
-        case .decreaseFont: preferences.noteFontSize = max(10, preferences.noteFontSize - 1.5)
-        
-        case .formatTitle: bridge.togglePrefix("# ")
-        case .formatHeading: bridge.togglePrefix("## ")
-        case .formatSubheading: bridge.togglePrefix("### ")
-        case .formatBody: bridge.togglePrefix("")
-        case .formatMonospaced: bridge.applyWrap(prefix: "`", suffix: "`")
-        
-        case .formatBold: bridge.applyWrap(prefix: "**", suffix: "**")
-        case .formatItalic: bridge.applyWrap(prefix: "*", suffix: "*")
-        case .formatStrikethrough: bridge.applyWrap(prefix: "~~", suffix: "~~")
-        case .formatUnderline: bridge.applyWrap(prefix: "<u>", suffix: "</u>")
-        
-        case .formatBulletList: bridge.togglePrefix("* ")
-        case .formatDashList: bridge.togglePrefix("- ")
-        case .formatNumberList: bridge.togglePrefix("1. ")
-        case .formatCheckList: bridge.toggleTask()
-        
-        case .insertTable:
-            bridge.insertText("\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n")
+            model.setArchived(id: noteID, true)
+            onClose()
+        case .increaseFont:
+            preferences.noteFontSize = min(30, preferences.noteFontSize + 1.5)
+        case .decreaseFont:
+            preferences.noteFontSize = max(10, preferences.noteFontSize - 1.5)
         case .insertImage:
             insertImage()
-        case .insertLink: bridge.applyWrap(prefix: "[", suffix: "](https://)")
-        case .insertCodeBlock: bridge.applyWrap(prefix: "```\n", suffix: "\n```")
-        case .insertInlineMath: bridge.applyWrap(prefix: "$", suffix: "$")
-        case .insertDisplayMath: bridge.applyWrap(prefix: "$$\n", suffix: "\n$$")
+        default:
+            break
         }
     }
 
@@ -243,9 +236,7 @@ struct NoteEditorView: View {
         guard panel.runModal() == .OK,
               let url = panel.url,
               let filename = AttachmentManager.shared.saveFile(from: url) else { return }
-        if !bridge.insertImageBlock(filename) {
-            bridge.insertText("![Image](\(filename))")
-        }
+        bridge.insertImageBlock(filename)
     }
 }
 
@@ -299,34 +290,28 @@ private struct FormattingChooserView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Button("Title") { onCommand(.formatTitle) }.font(.title.bold())
-                Button("Heading") { onCommand(.formatHeading) }.font(.title2.weight(.semibold))
-                Button("Subheading") { onCommand(.formatSubheading) }.font(.title3.weight(.medium))
-                Button("Body") { onCommand(.formatBody) }.font(.body)
-                Button("Monostyled") { onCommand(.formatMonospaced) }.font(.system(.body, design: .monospaced))
+                Button("Title") { onCommand(.formatTitle) }.font(.system(size: 18, weight: .bold))
+                Button("Heading") { onCommand(.formatHeading) }.font(.system(size: 15, weight: .bold))
+                Button("Subheading") { onCommand(.formatSubheading) }.font(.system(size: 14, weight: .semibold))
+                Button("Body") { onCommand(.formatBody) }.font(.system(size: 13, weight: .regular))
+                Button("Monostyled") { onCommand(.formatMonospaced) }.font(.system(size: 12, weight: .regular, design: .monospaced))
             }
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 Button("• Bulleted List") { onCommand(.formatBulletList) }
-                Button("- Dashed List") { onCommand(.formatDashList) }
+                Button("– Dashed List") { onCommand(.formatDashList) }
                 Button("1. Numbered List") { onCommand(.formatNumberList) }
-                Button("☑ Checklist") { onCommand(.formatCheckList) }
+                Button("◯ Checklist") { onCommand(.formatCheckList) }
+                Button("▍ Block Quote") { onCommand(.formatBlockQuote) }
             }
             Divider()
             HStack(spacing: 16) {
-                Button { onCommand(.formatBold) } label: { Image(systemName: "bold") }.help("Bold")
-                Button { onCommand(.formatItalic) } label: { Image(systemName: "italic") }.help("Italic")
-                Button { onCommand(.formatUnderline) } label: { Image(systemName: "underline") }.help("Underline")
-                Button { onCommand(.formatStrikethrough) } label: { Image(systemName: "strikethrough") }.help("Strikethrough")
+                Button { onCommand(.formatBold) } label: { Image(systemName: "bold") }.help("Bold (⌘B)")
+                Button { onCommand(.formatItalic) } label: { Image(systemName: "italic") }.help("Italic (⌘I)")
+                Button { onCommand(.formatUnderline) } label: { Image(systemName: "underline") }.help("Underline (⌘U)")
+                Button { onCommand(.formatStrikethrough) } label: { Image(systemName: "strikethrough") }.help("Strikethrough (⇧⌘X)")
                 Divider().frame(height: 16)
-                Button { onCommand(.insertTable) } label: { Image(systemName: "tablecells") }.help("Insert Table")
                 Button { onCommand(.insertImage) } label: { Image(systemName: "photo") }.help("Insert Image")
-            }
-            HStack(spacing: 16) {
-                Button { onCommand(.insertLink) } label: { Image(systemName: "link") }.help("Insert Link")
-                Button { onCommand(.insertCodeBlock) } label: { Image(systemName: "chevron.left.forwardslash.chevron.right") }.help("Insert Code Block")
-                Button { onCommand(.insertInlineMath) } label: { Image(systemName: "function") }.help("Insert Inline Math")
-                Button("∑ Block") { onCommand(.insertDisplayMath) }.help("Insert Display Math")
             }
         }
         .padding(16)

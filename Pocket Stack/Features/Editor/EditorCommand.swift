@@ -14,6 +14,7 @@ enum EditorCommand: Equatable {
     case formatDashList
     case formatNumberList
     case formatCheckList
+    case formatBlockQuote
     case insertLink
     case insertCodeBlock
     case insertInlineMath

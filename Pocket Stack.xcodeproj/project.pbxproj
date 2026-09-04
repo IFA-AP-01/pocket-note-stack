@@ -7,9 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D5A0C00130A0000100C0D3E1 /* MarkdownEngine in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00330A0000100C0D3E1 /* MarkdownEngine */; };
-		D5A0C00630A0000100C0D3E1 /* MarkdownEngineCodeBlocks in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */; };
-		D5A0C00730A0000100C0D3E1 /* MarkdownEngineLatex in Frameworks */ = {isa = PBXBuildFile; productRef = D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */; };
 		D5B0C00130B0000100C0D3E1 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = D5B0C00330B0000100C0D3E1 /* Markdown */; };
 /* End PBXBuildFile section */
 
@@ -60,9 +57,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				D5B0C00130B0000100C0D3E1 /* Markdown in Frameworks */,
-				D5A0C00130A0000100C0D3E1 /* MarkdownEngine in Frameworks */,
-				D5A0C00630A0000100C0D3E1 /* MarkdownEngineCodeBlocks in Frameworks */,
-				D5A0C00730A0000100C0D3E1 /* MarkdownEngineLatex in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -124,9 +118,6 @@
 			name = "Pocket Stack";
 			packageProductDependencies = (
 				D5B0C00330B0000100C0D3E1 /* Markdown */,
-				D5A0C00330A0000100C0D3E1 /* MarkdownEngine */,
-				D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */,
-				D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */,
 			);
 			productName = "Pocket Stack";
 			productReference = 6C64B4FC30467589003B51BA /* Pocket Stack.app */;
@@ -212,7 +203,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */,
-				D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6C64B4FD30467589003B51BA /* Products */;
@@ -604,14 +594,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/nodes-app/swift-markdown-engine";
-			requirement = {
-				kind = exactVersion;
-				version = 0.12.0;
-			};
-		};
 		D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/swiftlang/swift-markdown";
@@ -623,21 +605,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		D5A0C00330A0000100C0D3E1 /* MarkdownEngine */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */;
-			productName = MarkdownEngine;
-		};
-		D5A0C00430A0000100C0D3E1 /* MarkdownEngineCodeBlocks */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */;
-			productName = MarkdownEngineCodeBlocks;
-		};
-		D5A0C00530A0000100C0D3E1 /* MarkdownEngineLatex */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D5A0C00230A0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown-engine" */;
-			productName = MarkdownEngineLatex;
-		};
 		D5B0C00330B0000100C0D3E1 /* Markdown */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D5B0C00230B0000100C0D3E1 /* XCRemoteSwiftPackageReference "swift-markdown" */;
