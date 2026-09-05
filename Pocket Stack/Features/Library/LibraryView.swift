@@ -161,6 +161,10 @@ private struct LibraryNoteDetail: View {
     let model: AppModel
     let onDelete: () -> Void
     @State private var draft: String
+    @State private var titleDraft: String
+    @State private var usesCustomTitle: Bool
+    @State private var isTitleHovered = false
+    @FocusState private var titleFocused: Bool
     @State private var bridge = EditorBridge()
     @State private var isDeleted = false
 
@@ -169,10 +173,19 @@ private struct LibraryNoteDetail: View {
         self.model = model
         self.onDelete = onDelete
         _draft = State(initialValue: note.body)
+        let initialTitle = note.customTitle ?? (note.title.isEmpty ? "" : note.title)
+        _titleDraft = State(initialValue: initialTitle)
+        _usesCustomTitle = State(initialValue: note.customTitle != nil)
     }
 
     private var note: Note? { model.note(id: noteID) }
     private var palette: NotePaletteColor { note.map(NotePalette.color(for:)) ?? NotePalette.color(0) }
+
+    private var editableTitle: String {
+        if let custom = note?.customTitle, !custom.isEmpty { return custom }
+        let title = note?.title ?? ""
+        return title.isEmpty ? "" : title
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -189,7 +202,30 @@ private struct LibraryNoteDetail: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(note?.displayTitle ?? "Note").font(.title2.bold())
+                        TextField("Title", text: $titleDraft)
+                            .font(.title2.bold())
+                            .textFieldStyle(.plain)
+                            .foregroundStyle(palette.ink)
+                            .focused($titleFocused)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(palette.ink.opacity(titleFocused ? 0.08 : (isTitleHovered ? 0.04 : 0)))
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(titleFocused ? palette.accent.opacity(0.6) : .clear, lineWidth: 1)
+                            }
+                            .onHover { isTitleHovered = $0 }
+                            .onSubmit {
+                                titleFocused = false
+                                persistContent()
+                            }
+                            .onExitCommand {
+                                titleFocused = false
+                            }
+
                         PocketNoteEditorView(
                             text: $draft,
                             palette: palette,
@@ -220,14 +256,36 @@ private struct LibraryNoteDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .onChange(of: draft) { _, value in
-            guard !isDeleted else { return }
-            model.updateBody(id: noteID, body: value)
+        .onChange(of: draft) { _, _ in
+            persistContent()
+        }
+        .onChange(of: titleDraft) { _, value in
+            guard titleFocused else { return }
+            usesCustomTitle = !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            persistContent()
+        }
+        .onChange(of: editableTitle) { _, value in
+            guard !titleFocused else { return }
+            titleDraft = value
+            usesCustomTitle = note?.customTitle != nil
+        }
+        .onChange(of: titleFocused) { _, focused in
+            if !focused {
+                persistContent()
+            }
         }
         .onDisappear {
-            guard !isDeleted else { return }
-            model.updateBody(id: noteID, body: draft)
+            persistContent()
         }
+    }
+
+    private func persistContent() {
+        guard !isDeleted else { return }
+        model.updateContent(
+            id: noteID,
+            body: draft,
+            customTitle: usesCustomTitle ? titleDraft : nil
+        )
     }
 
     private var header: some View {

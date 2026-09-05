@@ -14,7 +14,13 @@ extension NSAttributedString.Key {
 
 final class PocketEditorScrollView: NSScrollView {
     var fitsContent: Bool = false
-    var onBoundsChange: (() -> Void)?
+
+    override var intrinsicContentSize: NSSize {
+        if fitsContent, let textView = documentView as? PocketTextView {
+            return NSSize(width: NSView.noIntrinsicMetric, height: textView.contentHeight)
+        }
+        return super.intrinsicContentSize
+    }
 
     override func scrollWheel(with event: NSEvent) {
         if fitsContent {
@@ -25,14 +31,6 @@ final class PocketEditorScrollView: NSScrollView {
             }
         } else {
             super.scrollWheel(with: event)
-        }
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        let oldWidth = bounds.width
-        super.setFrameSize(newSize)
-        if fitsContent && abs(newSize.width - oldWidth) > 1 {
-            onBoundsChange?()
         }
     }
 }
@@ -48,41 +46,16 @@ struct PocketNoteEditorView: View {
     var scrolls: Bool = true
     var onExit: (() -> Void)? = nil
 
-    @State private var contentHeight: CGFloat = 160
-
     var body: some View {
-        Group {
-            if scrolls {
-                PocketNativeEditorRepresentable(
-                    text: $text,
-                    palette: palette,
-                    fontSize: fontSize,
-                    fontName: fontName,
-                    bridge: bridge,
-                    scrolls: true,
-                    onHeightChange: nil,
-                    onExit: onExit
-                )
-            } else {
-                PocketNativeEditorRepresentable(
-                    text: $text,
-                    palette: palette,
-                    fontSize: fontSize,
-                    fontName: fontName,
-                    bridge: bridge,
-                    scrolls: false,
-                    onHeightChange: { newHeight in
-                        DispatchQueue.main.async {
-                            if abs(contentHeight - newHeight) > 1 {
-                                contentHeight = newHeight
-                            }
-                        }
-                    },
-                    onExit: onExit
-                )
-                .frame(height: max(160, contentHeight))
-            }
-        }
+        PocketNativeEditorRepresentable(
+            text: $text,
+            palette: palette,
+            fontSize: fontSize,
+            fontName: fontName,
+            bridge: bridge,
+            scrolls: scrolls,
+            onExit: onExit
+        )
         .background(palette.paper)
     }
 }
@@ -96,7 +69,6 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
     let fontName: String
     let bridge: EditorBridge
     var scrolls: Bool = true
-    var onHeightChange: ((CGFloat) -> Void)? = nil
     var onExit: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -153,6 +125,7 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = true
+        textView.allowsUndo = true
 
         context.coordinator.textView = textView
         bridge.activeTextView = textView
@@ -161,18 +134,6 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
         context.coordinator.loadText(text)
 
         scrollView.documentView = textView
-
-        let coordinator = context.coordinator
-        scrollView.onBoundsChange = { [weak coordinator, weak scrollView] in
-            guard let coordinator, let scrollView else { return }
-            coordinator.updateHeightIfNeeded(for: scrollView.bounds.width)
-        }
-
-        if !scrolls {
-            let initialH = textView.calculateContentHeight(for: initialWidth)
-            onHeightChange?(initialH)
-        }
-
         return scrollView
     }
 
@@ -185,23 +146,18 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
 
         if !context.coordinator.isInternalUpdate && context.coordinator.lastLoadedText != text {
             context.coordinator.loadText(text)
-        } else if !scrolls {
-            context.coordinator.updateHeightIfNeeded(for: scrollView.bounds.width)
+            if !scrolls {
+                scrollView.invalidateIntrinsicContentSize()
+            }
         }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: PocketEditorScrollView, context: Context) -> CGSize? {
         guard !scrolls else { return nil }
-        let targetWidth: CGFloat
-        if let w = proposal.width, w > 120 {
-            targetWidth = w
-        } else if nsView.bounds.width > 120 {
-            targetWidth = nsView.bounds.width
-        } else {
-            targetWidth = 600
-        }
-        let height = (nsView.documentView as? PocketTextView)?.calculateContentHeight(for: targetWidth) ?? 160
-        return CGSize(width: targetWidth, height: max(160, height))
+        guard let textView = nsView.documentView as? PocketTextView else { return nil }
+        let targetWidth = proposal.width ?? (nsView.bounds.width > 0 ? nsView.bounds.width : 600)
+        let height = textView.contentHeight
+        return CGSize(width: targetWidth, height: height)
     }
 
     // MARK: - Coordinator
@@ -221,13 +177,7 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
             guard let textView else { return }
             lastLoadedText = newText
             textView.loadContent(newText)
-            updateHeightIfNeeded()
-        }
-
-        func updateHeightIfNeeded(for width: CGFloat? = nil) {
-            guard !parent.scrolls, let textView else { return }
-            let h = textView.calculateContentHeight(for: width)
-            parent.onHeightChange?(h)
+            textView.undoManager?.removeAllActions()
         }
 
         func textDidChange(_ notification: Notification) {
@@ -237,7 +187,9 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
             lastLoadedText = serialized
             parent.text = serialized
             isInternalUpdate = false
-            updateHeightIfNeeded()
+            if !parent.scrolls, let scroll = textView.enclosingScrollView {
+                scroll.invalidateIntrinsicContentSize()
+            }
         }
     }
 }
@@ -253,13 +205,53 @@ final class PocketTextView: NSTextView {
     private var currentFontName: String = ""
     private var cursorTrackingArea: NSTrackingArea?
 
+    private let customUndoManager = UndoManager()
+
+    override var undoManager: UndoManager? {
+        return customUndoManager
+    }
+
+    @objc func undo(_ sender: Any?) {
+        if let um = undoManager, um.canUndo {
+            um.undo()
+        }
+    }
+
+    @objc func redo(_ sender: Any?) {
+        if let um = undoManager, um.canRedo {
+            um.redo()
+        }
+    }
+
+    override func responds(to aSelector: Selector!) -> Bool {
+        if aSelector == #selector(undo(_:)) || aSelector == Selector(("undo:")) {
+            return undoManager?.canUndo ?? false
+        }
+        if aSelector == #selector(redo(_:)) || aSelector == Selector(("redo:")) {
+            return undoManager?.canRedo ?? false
+        }
+        return super.responds(to: aSelector)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(undo(_:)) || item.action == Selector(("undo:")) {
+            return undoManager?.canUndo ?? false
+        }
+        if item.action == #selector(redo(_:)) || item.action == Selector(("redo:")) {
+            return undoManager?.canRedo ?? false
+        }
+        return super.validateUserInterfaceItem(item)
+    }
+
     override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
         super.init(frame: frameRect, textContainer: container)
+        allowsUndo = true
         registerForDraggedTypes([.fileURL, .png, .tiff])
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        allowsUndo = true
         registerForDraggedTypes([.fileURL, .png, .tiff])
     }
 
@@ -275,28 +267,9 @@ final class PocketTextView: NSTextView {
         super.scrollWheel(with: event)
     }
 
-    func calculateContentHeight(for explicitWidth: CGFloat? = nil) -> CGFloat {
+    var contentHeight: CGFloat {
         guard let layoutManager = layoutManager, let textContainer = textContainer else {
             return 160
-        }
-
-        let targetWidth: CGFloat
-        if let explicitWidth, explicitWidth > 120 {
-            targetWidth = explicitWidth
-        } else if bounds.width > 120 {
-            targetWidth = bounds.width
-        } else if let scroll = enclosingScrollView, scroll.bounds.width > 120 {
-            targetWidth = scroll.bounds.width
-        } else {
-            targetWidth = 600
-        }
-
-        let insetW = textContainerInset.width * 2
-        let insetH = textContainerInset.height * 2
-        let contentWidth = max(50, targetWidth - insetW)
-
-        if abs(textContainer.containerSize.width - contentWidth) > 1 {
-            textContainer.containerSize = NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)
         }
 
         layoutManager.ensureLayout(for: textContainer)
@@ -306,7 +279,7 @@ final class PocketTextView: NSTextView {
             totalHeight = max(totalHeight, layoutManager.extraLineFragmentRect.maxY)
         }
 
-        let finalHeight = ceil(totalHeight + insetH + 16)
+        let finalHeight = ceil(totalHeight + textContainerInset.height * 2 + 16)
         return max(160, finalHeight)
     }
 
@@ -387,39 +360,73 @@ final class PocketTextView: NSTextView {
         addCursorRect(visibleRect, cursor: .iBeam)
     }
 
-    // MARK: - 100% Native Vietnamese Typing (Never Intercept Keystrokes)
+    // MARK: - Native Vietnamese Typing & Undo Support
 
     override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
-        return true
+        return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
     }
 
-    // MARK: - Native Rich Text Shortcuts (Cmd+B, Cmd+I, Cmd+U, Shift+Cmd+X, Shift+Cmd+C)
+    // MARK: - Native Shortcuts & Key Equivalents (Cmd+C, Cmd+V, Cmd+X, Cmd+Z, etc.)
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty else {
+            return super.performKeyEquivalent(with: event)
+        }
+
         if flags == .command {
-            switch event.charactersIgnoringModifiers {
-            case "b", "B":
+            switch chars {
+            case "c":
+                copy(nil)
+                return true
+            case "v":
+                paste(nil)
+                return true
+            case "x":
+                cut(nil)
+                return true
+            case "a":
+                selectAll(nil)
+                return true
+            case "z":
+                if let um = undoManager, um.canUndo {
+                    um.undo()
+                }
+                return true
+            case "y":
+                if let um = undoManager, um.canRedo {
+                    um.redo()
+                }
+                return true
+            case "b":
                 toggleBold()
                 return true
-            case "i", "I":
+            case "i":
                 toggleItalic()
                 return true
-            case "u", "U":
+            case "u":
                 toggleUnderline()
                 return true
             default:
                 break
             }
         } else if flags == [.command, .shift] {
-            switch event.charactersIgnoringModifiers {
-            case "x", "X", "s", "S":
+            switch chars {
+            case "z":
+                if let um = undoManager, um.canRedo {
+                    um.redo()
+                }
+                return true
+            case "v":
+                pasteAsPlainText(nil)
+                return true
+            case "x", "s":
                 toggleStrikethrough()
                 return true
-            case "c", "C", "l", "L":
+            case "c", "l":
                 toggleChecklist()
                 return true
-            case "u", "U":
+            case "u":
                 toggleBulletList()
                 return true
             default:
@@ -571,6 +578,7 @@ final class PocketTextView: NSTextView {
                         let newBox = makeCheckboxAttachment(checked: newChecked)
                         
                         let replaceRange = NSRange(location: targetCharIdx, length: 1)
+                        guard shouldChangeText(in: replaceRange, replacementString: nil) else { return }
                         storage.replaceCharacters(in: replaceRange, with: newBox)
 
                         let lineEnd = lineRange.location + lineRange.length
@@ -1559,6 +1567,7 @@ final class PocketTextView: NSTextView {
     func toggleBold() {
         let selected = selectedRange()
         guard let storage = textStorage, selected.length > 0 else { return }
+        guard shouldChangeText(in: selected, replacementString: nil) else { return }
 
         var isAllBold = true
         storage.enumerateAttribute(.font, in: selected, options: []) { val, _, stop in
@@ -1581,6 +1590,7 @@ final class PocketTextView: NSTextView {
     func toggleItalic() {
         let selected = selectedRange()
         guard let storage = textStorage, selected.length > 0 else { return }
+        guard shouldChangeText(in: selected, replacementString: nil) else { return }
 
         var isAllItalic = true
         storage.enumerateAttribute(.font, in: selected, options: []) { val, _, stop in
@@ -1603,6 +1613,7 @@ final class PocketTextView: NSTextView {
     func toggleUnderline() {
         let selected = selectedRange()
         guard let storage = textStorage, selected.length > 0 else { return }
+        guard shouldChangeText(in: selected, replacementString: nil) else { return }
 
         var hasUnderline = false
         if let style = storage.attribute(.underlineStyle, at: selected.location, effectiveRange: nil) as? Int, style != 0 {
@@ -1620,6 +1631,7 @@ final class PocketTextView: NSTextView {
     func toggleStrikethrough() {
         let selected = selectedRange()
         guard let storage = textStorage, selected.length > 0 else { return }
+        guard shouldChangeText(in: selected, replacementString: nil) else { return }
 
         var hasStrike = false
         if let style = storage.attribute(.strikethroughStyle, at: selected.location, effectiveRange: nil) as? Int, style != 0 {
@@ -1658,6 +1670,7 @@ final class PocketTextView: NSTextView {
                 }
             }
             let removeRange = NSRange(location: boxIdx, length: removeLen)
+            guard shouldChangeText(in: removeRange, replacementString: "") else { return }
             storage.replaceCharacters(in: removeRange, with: "")
 
             let updatedLineRange = (storage.string as NSString).lineRange(for: NSRange(location: min(selected.location, storage.length), length: 0))
@@ -1680,6 +1693,7 @@ final class PocketTextView: NSTextView {
         insertAttr.append(NSAttributedString(string: " "))
 
         let targetRange = NSRange(location: updatedRange.location, length: 0)
+        guard shouldChangeText(in: targetRange, replacementString: insertAttr.string) else { return }
         storage.replaceCharacters(in: targetRange, with: insertAttr)
         didChangeText()
         setSelectedRange(NSRange(location: updatedRange.location + insertAttr.length, length: 0))
@@ -1699,6 +1713,7 @@ final class PocketTextView: NSTextView {
 
         if line.hasPrefix(prefix) {
             let r = NSRange(location: lineRange.location, length: prefix.count)
+            guard shouldChangeText(in: r, replacementString: "") else { return }
             storage.replaceCharacters(in: r, with: "")
             didChangeText()
             return
@@ -1706,7 +1721,9 @@ final class PocketTextView: NSTextView {
 
         stripListPrefixes(in: lineRange)
         let updatedRange = (storage.string as NSString).lineRange(for: NSRange(location: min(selected.location, storage.length), length: 0))
-        storage.replaceCharacters(in: NSRange(location: updatedRange.location, length: 0), with: prefix)
+        let targetRange = NSRange(location: updatedRange.location, length: 0)
+        guard shouldChangeText(in: targetRange, replacementString: prefix) else { return }
+        storage.replaceCharacters(in: targetRange, with: prefix)
         didChangeText()
     }
 }
