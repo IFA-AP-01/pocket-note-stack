@@ -195,9 +195,9 @@ private struct LibraryNoteDetail: View {
                             palette: palette,
                             fontSize: AppPreferences.shared.noteFontSize,
                             fontName: AppPreferences.shared.noteFontName,
-                            bridge: bridge
+                            bridge: bridge,
+                            scrolls: false
                         )
-                        .frame(minHeight: 220)
                     }
                     .padding(20)
                     .foregroundStyle(palette.ink)

@@ -10,6 +10,33 @@ extension NSAttributedString.Key {
     static let psStyleRole = NSAttributedString.Key("PSStyleRole") // "title", "heading", "subheading", "body", "mono"
 }
 
+// MARK: - PocketEditorScrollView (Outer Scroll Forwarding & Dynamic Height)
+
+final class PocketEditorScrollView: NSScrollView {
+    var fitsContent: Bool = false
+    var onBoundsChange: (() -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        if fitsContent {
+            if let enclosing = enclosingScrollView {
+                enclosing.scrollWheel(with: event)
+            } else {
+                nextResponder?.scrollWheel(with: event)
+            }
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let oldWidth = bounds.width
+        super.setFrameSize(newSize)
+        if fitsContent && abs(newSize.width - oldWidth) > 1 {
+            onBoundsChange?()
+        }
+    }
+}
+
 // MARK: - PocketNoteEditorView (SwiftUI Wrapper)
 
 struct PocketNoteEditorView: View {
@@ -18,17 +45,44 @@ struct PocketNoteEditorView: View {
     let fontSize: CGFloat
     let fontName: String
     let bridge: EditorBridge
+    var scrolls: Bool = true
     var onExit: (() -> Void)? = nil
 
+    @State private var contentHeight: CGFloat = 160
+
     var body: some View {
-        PocketNativeEditorRepresentable(
-            text: $text,
-            palette: palette,
-            fontSize: fontSize,
-            fontName: fontName,
-            bridge: bridge,
-            onExit: onExit
-        )
+        Group {
+            if scrolls {
+                PocketNativeEditorRepresentable(
+                    text: $text,
+                    palette: palette,
+                    fontSize: fontSize,
+                    fontName: fontName,
+                    bridge: bridge,
+                    scrolls: true,
+                    onHeightChange: nil,
+                    onExit: onExit
+                )
+            } else {
+                PocketNativeEditorRepresentable(
+                    text: $text,
+                    palette: palette,
+                    fontSize: fontSize,
+                    fontName: fontName,
+                    bridge: bridge,
+                    scrolls: false,
+                    onHeightChange: { newHeight in
+                        DispatchQueue.main.async {
+                            if abs(contentHeight - newHeight) > 1 {
+                                contentHeight = newHeight
+                            }
+                        }
+                    },
+                    onExit: onExit
+                )
+                .frame(height: max(160, contentHeight))
+            }
+        }
         .background(palette.paper)
     }
 }
@@ -41,24 +95,36 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
     let fontSize: CGFloat
     let fontName: String
     let bridge: EditorBridge
+    var scrolls: Bool = true
+    var onHeightChange: ((CGFloat) -> Void)? = nil
     var onExit: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> PocketEditorScrollView {
         let defaultNoteSize = AppPreferences.shared.noteSize
         let initialWidth = max(360, defaultNoteSize.width)
         let initialHeight = max(240, defaultNoteSize.height)
         let initialFrame = NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight)
 
-        let scrollView = NSScrollView(frame: initialFrame)
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
+        let scrollView = PocketEditorScrollView(frame: initialFrame)
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
+
+        if !scrolls {
+            scrollView.hasVerticalScroller = false
+            scrollView.hasHorizontalScroller = false
+            scrollView.verticalScrollElasticity = .none
+            scrollView.horizontalScrollElasticity = .none
+            scrollView.fitsContent = true
+        } else {
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = false
+            scrollView.autohidesScrollers = true
+            scrollView.fitsContent = false
+        }
 
         let textStorage = NSTextStorage()
         let layoutManager = NSLayoutManager()
@@ -74,7 +140,7 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.editorCoordinator = context.coordinator
         textView.onExit = onExit
-        textView.minSize = NSSize(width: 0, height: initialHeight)
+        textView.minSize = NSSize(width: 0, height: scrolls ? initialHeight : 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -95,10 +161,22 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
         context.coordinator.loadText(text)
 
         scrollView.documentView = textView
+
+        let coordinator = context.coordinator
+        scrollView.onBoundsChange = { [weak coordinator, weak scrollView] in
+            guard let coordinator, let scrollView else { return }
+            coordinator.updateHeightIfNeeded(for: scrollView.bounds.width)
+        }
+
+        if !scrolls {
+            let initialH = textView.calculateContentHeight(for: initialWidth)
+            onHeightChange?(initialH)
+        }
+
         return scrollView
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    func updateNSView(_ scrollView: PocketEditorScrollView, context: Context) {
         guard let textView = scrollView.documentView as? PocketTextView else { return }
         context.coordinator.parent = self
         bridge.activeTextView = textView
@@ -107,7 +185,23 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
 
         if !context.coordinator.isInternalUpdate && context.coordinator.lastLoadedText != text {
             context.coordinator.loadText(text)
+        } else if !scrolls {
+            context.coordinator.updateHeightIfNeeded(for: scrollView.bounds.width)
         }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: PocketEditorScrollView, context: Context) -> CGSize? {
+        guard !scrolls else { return nil }
+        let targetWidth: CGFloat
+        if let w = proposal.width, w > 120 {
+            targetWidth = w
+        } else if nsView.bounds.width > 120 {
+            targetWidth = nsView.bounds.width
+        } else {
+            targetWidth = 600
+        }
+        let height = (nsView.documentView as? PocketTextView)?.calculateContentHeight(for: targetWidth) ?? 160
+        return CGSize(width: targetWidth, height: max(160, height))
     }
 
     // MARK: - Coordinator
@@ -127,6 +221,13 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
             guard let textView else { return }
             lastLoadedText = newText
             textView.loadContent(newText)
+            updateHeightIfNeeded()
+        }
+
+        func updateHeightIfNeeded(for width: CGFloat? = nil) {
+            guard !parent.scrolls, let textView else { return }
+            let h = textView.calculateContentHeight(for: width)
+            parent.onHeightChange?(h)
         }
 
         func textDidChange(_ notification: Notification) {
@@ -136,6 +237,7 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
             lastLoadedText = serialized
             parent.text = serialized
             isInternalUpdate = false
+            updateHeightIfNeeded()
         }
     }
 }
@@ -163,6 +265,49 @@ final class PocketTextView: NSTextView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if let scroll = enclosingScrollView as? PocketEditorScrollView, scroll.fitsContent {
+            scroll.scrollWheel(with: event)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
+    func calculateContentHeight(for explicitWidth: CGFloat? = nil) -> CGFloat {
+        guard let layoutManager = layoutManager, let textContainer = textContainer else {
+            return 160
+        }
+
+        let targetWidth: CGFloat
+        if let explicitWidth, explicitWidth > 120 {
+            targetWidth = explicitWidth
+        } else if bounds.width > 120 {
+            targetWidth = bounds.width
+        } else if let scroll = enclosingScrollView, scroll.bounds.width > 120 {
+            targetWidth = scroll.bounds.width
+        } else {
+            targetWidth = 600
+        }
+
+        let insetW = textContainerInset.width * 2
+        let insetH = textContainerInset.height * 2
+        let contentWidth = max(50, targetWidth - insetW)
+
+        if abs(textContainer.containerSize.width - contentWidth) > 1 {
+            textContainer.containerSize = NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)
+        }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        var totalHeight = usedRect.maxY
+        if layoutManager.extraLineFragmentRect.height > 0 {
+            totalHeight = max(totalHeight, layoutManager.extraLineFragmentRect.maxY)
+        }
+
+        let finalHeight = ceil(totalHeight + insetH + 16)
+        return max(160, finalHeight)
     }
 
     override func becomeFirstResponder() -> Bool {
