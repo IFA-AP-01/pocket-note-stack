@@ -56,9 +56,8 @@ final class AttachmentManager {
     func attachmentURL(named filename: String) -> URL? {
         guard !filename.isEmpty,
               filename == (filename as NSString).lastPathComponent else { return nil }
-        let url = attachmentsDirectory.appendingPathComponent(filename).standardizedFileURL
-        guard url.deletingLastPathComponent() == attachmentsDirectory.standardizedFileURL,
-              fileManager.fileExists(atPath: url.path) else { return nil }
-        return url
+        let fileURL = attachmentsDirectory.appendingPathComponent(filename)
+        guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
+        return fileURL
     }
 }

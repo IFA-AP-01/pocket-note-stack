@@ -48,28 +48,33 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let defaultNoteSize = AppPreferences.shared.noteSize
+        let initialWidth = max(360, defaultNoteSize.width)
+        let initialHeight = max(240, defaultNoteSize.height)
+        let initialFrame = NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight)
+
+        let scrollView = NSScrollView(frame: initialFrame)
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
 
-        let contentSize = scrollView.contentSize
         let textStorage = NSTextStorage()
         let layoutManager = NSLayoutManager()
         textStorage.addLayoutManager(layoutManager)
 
-        let textContainer = NSTextContainer(containerSize: NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude))
+        let contentWidth = max(initialWidth - 36, 320)
+        let textContainer = NSTextContainer(containerSize: NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude))
         textContainer.widthTracksTextView = true
         textContainer.lineFragmentPadding = 0
         layoutManager.addTextContainer(textContainer)
 
-        let textView = PocketTextView(frame: NSRect(origin: .zero, size: contentSize), textContainer: textContainer)
+        let textView = PocketTextView(frame: initialFrame, textContainer: textContainer)
         textView.delegate = context.coordinator
         textView.editorCoordinator = context.coordinator
         textView.onExit = onExit
-        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.minSize = NSSize(width: 0, height: initialHeight)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -565,13 +570,9 @@ final class PocketTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let pboard = NSPasteboard.general
-        if let image = NSImage(pasteboard: pboard) {
-            if let filename = AttachmentManager.shared.saveImage(image) {
-                insertImageAttachment(filename: filename, alt: "Image")
-                return
-            }
-        }
-        if let urls = pboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
+
+        // 1. Standalone image files (e.g. copied in Finder)
+        if let urls = pboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], !urls.isEmpty {
             for url in urls {
                 if let uti = UTType(filenameExtension: url.pathExtension), uti.conforms(to: .image) {
                     if let filename = AttachmentManager.shared.saveFile(from: url) {
@@ -581,7 +582,166 @@ final class PocketTextView: NSTextView {
                 }
             }
         }
+
+        // 2. Direct image in pasteboard (Screenshots, Copy Image from Chrome/Safari/Firefox/Preview/etc.)
+        let types = pboard.types ?? []
+        let hasDirectImageData = types.contains(where: {
+            $0 == .png || $0 == .tiff || $0.rawValue.lowercased().contains("image")
+        })
+
+        if hasDirectImageData, let image = NSImage(pasteboard: pboard) {
+            // Only treat as text document if user copied a large block of text that happens to have image data
+            let plainText = pboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let isLargeTextDocument = plainText.contains("\n") && plainText.count > 120
+
+            if !isLargeTextDocument {
+                if let filename = AttachmentManager.shared.saveImage(image) {
+                    insertImageAttachment(filename: filename, alt: "Image")
+                    return
+                }
+            }
+        }
+
+        // 3. Rich text: sanitize colors and foreign background boxes
+        if let items = pboard.readObjects(forClasses: [NSAttributedString.self], options: nil) as? [NSAttributedString],
+           let rawAttr = items.first, rawAttr.length > 0 {
+            let sanitized = sanitizePastedAttributedString(rawAttr)
+            let selected = selectedRange()
+            if shouldChangeText(in: selected, replacementString: sanitized.string) {
+                textStorage?.replaceCharacters(in: selected, with: sanitized)
+                didChangeText()
+                setSelectedRange(NSRange(location: selected.location + sanitized.length, length: 0))
+                return
+            }
+        }
+
+        // 4. Plain text fallback
+        if let plain = pboard.string(forType: .string), !plain.isEmpty {
+            pastePlainTextString(plain)
+            return
+        }
+
         super.paste(sender)
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) {
+        let pboard = NSPasteboard.general
+        if let str = pboard.string(forType: .string) {
+            pastePlainTextString(str)
+        } else {
+            super.pasteAsPlainText(sender)
+        }
+    }
+
+    private func pastePlainTextString(_ string: String) {
+        let selected = selectedRange()
+        let pStyle = NSMutableParagraphStyle()
+        pStyle.lineSpacing = 3
+        pStyle.paragraphSpacing = 6
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: fontForRole(nil),
+            .foregroundColor: NSColor(currentPalette?.ink ?? Color.primary),
+            .paragraphStyle: pStyle
+        ]
+        let attrString = NSAttributedString(string: string, attributes: attrs)
+        if shouldChangeText(in: selected, replacementString: string) {
+            textStorage?.replaceCharacters(in: selected, with: attrString)
+            didChangeText()
+            setSelectedRange(NSRange(location: selected.location + attrString.length, length: 0))
+        }
+    }
+
+    private func sanitizePastedAttributedString(_ source: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let baseFont = fontForRole(nil)
+        let ink = NSColor(currentPalette?.ink ?? Color.primary)
+        let accent = NSColor(currentPalette?.accent ?? Color.blue)
+
+        let pStyle = NSMutableParagraphStyle()
+        pStyle.lineSpacing = 3
+        pStyle.paragraphSpacing = 6
+
+        source.enumerateAttributes(in: NSRange(location: 0, length: source.length), options: []) { attrs, range, _ in
+            let substring = (source.string as NSString).substring(with: range)
+            var newAttrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: ink,
+                .paragraphStyle: pStyle
+            ]
+
+            let sourceFont = attrs[.font] as? NSFont
+            var isBold = false
+            var isItalic = false
+            var isMono = false
+            var isLargeTitle = false
+            var isLargeHeading = false
+
+            if let sf = sourceFont {
+                let traits = NSFontManager.shared.traits(of: sf)
+                isBold = traits.contains(.boldFontMask)
+                isItalic = traits.contains(.italicFontMask)
+                let fName = sf.fontName.lowercased()
+                isMono = sf.isFixedPitch || fName.contains("mono") || fName.contains("menlo") || fName.contains("courier") || fName.contains("code")
+
+                if sf.pointSize >= currentFontSize * 1.5 {
+                    isLargeTitle = true
+                } else if sf.pointSize >= currentFontSize * 1.25 {
+                    isLargeHeading = true
+                }
+            }
+
+            let targetFont: NSFont
+            if isLargeTitle {
+                targetFont = fontForRole("title")
+                newAttrs[NSAttributedString.Key.psStyleRole] = "title"
+            } else if isLargeHeading {
+                targetFont = fontForRole("heading")
+                newAttrs[NSAttributedString.Key.psStyleRole] = "heading"
+            } else if isMono {
+                targetFont = fontForRole("mono")
+            } else {
+                var f = baseFont
+                if isBold {
+                    f = NSFontManager.shared.convert(f, toHaveTrait: .boldFontMask)
+                }
+                if isItalic {
+                    f = NSFontManager.shared.convert(f, toHaveTrait: .italicFontMask)
+                }
+                targetFont = f
+            }
+            newAttrs[.font] = targetFont
+
+            if let underline = attrs[.underlineStyle] as? Int, underline != 0 {
+                newAttrs[.underlineStyle] = underline
+            }
+            if let strike = attrs[.strikethroughStyle] as? Int, strike != 0 {
+                newAttrs[.strikethroughStyle] = strike
+            }
+
+            if let link = attrs[.link] {
+                newAttrs[.link] = link
+                newAttrs[.foregroundColor] = accent
+                newAttrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            }
+
+            // Stripping .backgroundColor guarantees no dark boxes on the note paper
+
+            if let attachment = attrs[.attachment] as? NSTextAttachment {
+                var imageFilename = attrs[NSAttributedString.Key.psImageSource] as? String
+                if imageFilename == nil, let img = attachment.image {
+                    imageFilename = AttachmentManager.shared.saveImage(img)
+                }
+                if let imageFilename {
+                    newAttrs[NSAttributedString.Key.psImageSource] = imageFilename
+                    newAttrs[NSAttributedString.Key.psImageAlt] = attrs[NSAttributedString.Key.psImageAlt] as? String ?? "Image"
+                }
+                newAttrs[.attachment] = attachment
+            }
+
+            result.append(NSAttributedString(string: substring, attributes: newAttrs))
+        }
+
+        return result
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -604,10 +764,84 @@ final class PocketTextView: NSTextView {
                 }
             }
         }
+        if let image = NSImage(pasteboard: pboard), let filename = AttachmentManager.shared.saveImage(image) {
+            insertImageAttachment(filename: filename, alt: "Image")
+            return true
+        }
         return super.performDragOperation(sender)
     }
 
-    // MARK: - Image Attachments
+    // MARK: - Image Attachments & Dynamic Width
+
+    var effectiveContentWidth: CGFloat {
+        if let container = textContainer, container.size.width > 120 {
+            return container.size.width
+        }
+        if bounds.width > 120 {
+            return bounds.width
+        }
+        if let scroll = enclosingScrollView, scroll.contentSize.width > 120 {
+            return scroll.contentSize.width
+        }
+        return max(360, AppPreferences.shared.noteSize.width)
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let oldWidth = bounds.width
+        super.setFrameSize(newSize)
+        if abs(newSize.width - oldWidth) > 20 && newSize.width > 150 {
+            adjustImageAttachmentsForCurrentWidth()
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            adjustImageAttachmentsForCurrentWidth()
+        }
+    }
+
+    private func adjustImageAttachmentsForCurrentWidth() {
+        guard let storage = textStorage, storage.length > 0 else { return }
+        let currentWidth = effectiveContentWidth
+        let targetWidth = max(160, min(currentWidth - 36, 560))
+
+        storage.enumerateAttribute(NSAttributedString.Key.psImageSource, in: NSRange(location: 0, length: storage.length), options: []) { val, range, _ in
+            guard let filename = val as? String,
+                  let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
+
+            var image: NSImage?
+            if let loaded = AttachmentManager.shared.loadImage(named: filename) {
+                image = loaded
+            } else if let localURL = URL(string: filename), localURL.isFileURL, let loaded = NSImage(contentsOf: localURL) {
+                image = loaded
+            } else if let loaded = NSImage(contentsOfFile: filename) {
+                image = loaded
+            }
+
+            guard let img = image else { return }
+            let origW = max(1, img.size.width)
+            let origH = max(1, img.size.height)
+            let scale = origW > targetWidth ? (targetWidth / origW) : 1.0
+            let displayWidth = max(80, min(origW * scale, targetWidth))
+            let displayHeight = max(40, origH * (displayWidth / origW))
+            let displaySize = NSSize(width: displayWidth, height: displayHeight)
+
+            if abs(attachment.bounds.width - displayWidth) > 5 {
+                let rounded = NSImage(size: displaySize, flipped: false) { rect in
+                    let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+                    path.addClip()
+                    img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                    return true
+                }
+
+                attachment.image = rounded
+                attachment.bounds = NSRect(origin: NSPoint(x: 0, y: -4), size: displaySize)
+                layoutManager?.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                layoutManager?.invalidateDisplay(forCharacterRange: range)
+            }
+        }
+    }
 
     func makeImageAttachment(filename: String, alt: String, maxWidth: CGFloat) -> NSAttributedString {
         var image: NSImage?
@@ -620,20 +854,24 @@ final class PocketTextView: NSTextView {
         }
 
         let attachment = NSTextAttachment()
-        let targetWidth = max(60, min(maxWidth - 36, 540))
+        let usableWidth = maxWidth > 120 ? maxWidth : effectiveContentWidth
+        let targetWidth = max(160, min(usableWidth - 36, 560))
 
         if let img = image {
             let originalSize = img.size
-            let scale = (originalSize.width > 0 && originalSize.width > targetWidth) ? (targetWidth / originalSize.width) : 1.0
-            let displaySize = NSSize(width: max(40, originalSize.width * scale), height: max(30, originalSize.height * scale))
+            let origW = max(1, originalSize.width)
+            let origH = max(1, originalSize.height)
+            let scale = origW > targetWidth ? (targetWidth / origW) : 1.0
+            let displayWidth = max(80, min(origW * scale, targetWidth))
+            let displayHeight = max(40, origH * (displayWidth / origW))
+            let displaySize = NSSize(width: displayWidth, height: displayHeight)
 
-            let rounded = NSImage(size: displaySize)
-            rounded.lockFocus()
-            let rect = NSRect(origin: .zero, size: displaySize)
-            let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
-            path.addClip()
-            img.draw(in: rect, from: NSRect(origin: .zero, size: originalSize), operation: .sourceOver, fraction: 1.0)
-            rounded.unlockFocus()
+            let rounded = NSImage(size: displaySize, flipped: false) { rect in
+                let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+                path.addClip()
+                img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                return true
+            }
 
             attachment.image = rounded
             attachment.bounds = NSRect(origin: NSPoint(x: 0, y: -4), size: displaySize)
@@ -665,8 +903,7 @@ final class PocketTextView: NSTextView {
 
     func insertImageAttachment(filename: String, alt: String) {
         let selected = selectedRange()
-        let containerWidth = textContainer?.size.width ?? 400
-        let imageAttr = makeImageAttachment(filename: filename, alt: alt, maxWidth: containerWidth)
+        let imageAttr = makeImageAttachment(filename: filename, alt: alt, maxWidth: effectiveContentWidth)
 
         let prefix = selected.location > 0 ? "\n" : ""
         let replacement = NSMutableAttributedString(string: prefix)
@@ -680,18 +917,16 @@ final class PocketTextView: NSTextView {
         }
     }
 
-    // MARK: - Load & Serialize (Clean Human Text, Zero Markdown Syntax)
+    // MARK: - Load & Serialize (Full Rich Text Preservation via Standard Markdown)
 
     func loadContent(_ raw: String) {
-        let containerWidth = textContainer?.size.width ?? 400
+        let containerWidth = effectiveContentWidth
         let attrString = NSMutableAttributedString()
         let pStyle = NSMutableParagraphStyle()
         pStyle.lineSpacing = 3
         pStyle.paragraphSpacing = 6
 
         let lines = raw.components(separatedBy: "\n")
-        let imgPattern = #"!\[(.*?)\]\((.*?)\)"#
-        let imgRegex = try? NSRegularExpression(pattern: imgPattern, options: [])
 
         for (lineIdx, rawLine) in lines.enumerated() {
             var line = rawLine
@@ -699,7 +934,7 @@ final class PocketTextView: NSTextView {
             var isChecklist = false
             var isChecked = false
 
-            // Convert legacy markdown prefixes to Apple Notes clean styles
+            // Convert markdown prefixes to roles and checklists
             if line.hasPrefix("# ") {
                 role = "title"
                 line.removeFirst(2)
@@ -723,19 +958,11 @@ final class PocketTextView: NSTextView {
                 line = "• " + line.dropFirst(2)
             }
 
-            // Remove any leftover leading spaces from checklist prefix stripping
             if isChecklist {
                 while line.hasPrefix(" ") {
                     line.removeFirst()
                 }
             }
-
-            // Strip legacy markdown syntax from text so user never sees markdown tags
-            line = line.replacingOccurrences(of: "**", with: "")
-                .replacingOccurrences(of: "~~", with: "")
-                .replacingOccurrences(of: "<u>", with: "")
-                .replacingOccurrences(of: "</u>", with: "")
-                .replacingOccurrences(of: "`", with: "")
 
             let lineAttr = NSMutableAttributedString()
 
@@ -745,45 +972,25 @@ final class PocketTextView: NSTextView {
                 lineAttr.append(NSAttributedString(string: " "))
             }
 
-            // Check for images
-            let nsLine = line as NSString
-            var currentIdx = 0
-            if let matches = imgRegex?.matches(in: line, options: [], range: NSRange(location: 0, length: nsLine.length)), !matches.isEmpty {
-                for match in matches {
-                    if match.range.location > currentIdx {
-                        let textChunk = nsLine.substring(with: NSRange(location: currentIdx, length: match.range.location - currentIdx))
-                        lineAttr.append(NSAttributedString(string: textChunk))
-                    }
-                    let alt = nsLine.substring(with: match.range(at: 1))
-                    let source = nsLine.substring(with: match.range(at: 2))
-                    lineAttr.append(makeImageAttachment(filename: source, alt: alt, maxWidth: containerWidth))
-                    currentIdx = match.range.location + match.range.length
-                }
-                if currentIdx < nsLine.length {
-                    let textChunk = nsLine.substring(with: NSRange(location: currentIdx, length: nsLine.length - currentIdx))
-                    lineAttr.append(NSAttributedString(string: textChunk))
-                }
-            } else {
-                lineAttr.append(NSAttributedString(string: line))
-            }
+            // Parse inline formatting (images, bold, italic, underline, strikethrough, code, links)
+            let parsedLine = parseInlineMarkdown(line, role: role, maxWidth: containerWidth)
+            lineAttr.append(parsedLine)
 
             let fullLineRange = NSRange(location: 0, length: lineAttr.length)
             let ink = NSColor(currentPalette?.ink ?? Color.primary)
-            lineAttr.addAttributes([
-                .font: fontForRole(role),
-                .foregroundColor: isChecked ? ink.withAlphaComponent(0.45) : ink,
-                .paragraphStyle: pStyle,
-                NSAttributedString.Key.psStyleRole: role
-            ], range: fullLineRange)
+
+            lineAttr.addAttribute(.paragraphStyle, value: pStyle, range: fullLineRange)
+            if role != "body" {
+                lineAttr.addAttribute(NSAttributedString.Key.psStyleRole, value: role, range: fullLineRange)
+            }
 
             if isChecked {
                 let textStart = isChecklist ? min(2, lineAttr.length) : 0
                 if textStart < lineAttr.length {
-                    lineAttr.addAttribute(
-                        .strikethroughStyle,
-                        value: NSUnderlineStyle.single.rawValue,
-                        range: NSRange(location: textStart, length: lineAttr.length - textStart)
-                    )
+                    lineAttr.addAttributes([
+                        .foregroundColor: ink.withAlphaComponent(0.45),
+                        .strikethroughStyle: NSUnderlineStyle.single.rawValue
+                    ], range: NSRange(location: textStart, length: lineAttr.length - textStart))
                 }
             }
 
@@ -799,6 +1006,127 @@ final class PocketTextView: NSTextView {
         setSelectedRange(NSRange(location: min(savedSelected.location, newLength), length: 0))
     }
 
+    private func parseInlineMarkdown(_ text: String, role: String, maxWidth: CGFloat) -> NSAttributedString {
+        guard !text.isEmpty else { return NSAttributedString() }
+
+        let result = NSMutableAttributedString()
+        let imgPattern = #"!\[(.*?)\]\((.*?)\)"#
+        guard let imgRegex = try? NSRegularExpression(pattern: imgPattern, options: []) else {
+            return parseTextChunkFormatting(text, role: role)
+        }
+
+        let nsText = text as NSString
+        let matches = imgRegex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+
+        var currentIdx = 0
+        for match in matches {
+            if match.range.location > currentIdx {
+                let textChunk = nsText.substring(with: NSRange(location: currentIdx, length: match.range.location - currentIdx))
+                result.append(parseTextChunkFormatting(textChunk, role: role))
+            }
+            let alt = nsText.substring(with: match.range(at: 1))
+            let source = nsText.substring(with: match.range(at: 2))
+            result.append(makeImageAttachment(filename: source, alt: alt, maxWidth: maxWidth))
+            currentIdx = match.range.location + match.range.length
+        }
+
+        if currentIdx < nsText.length {
+            let textChunk = nsText.substring(with: NSRange(location: currentIdx, length: nsText.length - currentIdx))
+            result.append(parseTextChunkFormatting(textChunk, role: role))
+        }
+
+        return result
+    }
+
+    private func parseTextChunkFormatting(_ text: String, role: String) -> NSAttributedString {
+        guard !text.isEmpty else { return NSAttributedString() }
+        let baseFont = fontForRole(role)
+        let ink = NSColor(currentPalette?.ink ?? Color.primary)
+        let attr = NSMutableAttributedString(string: text, attributes: [
+            .font: baseFont,
+            .foregroundColor: ink
+        ])
+
+        // 1. Links [title](url)
+        if let linkRegex = try? NSRegularExpression(pattern: #"\[(.*?)\]\((.*?)\)"#, options: []) {
+            let matches = linkRegex.matches(in: attr.string, options: [], range: NSRange(location: 0, length: attr.length)).reversed()
+            for m in matches {
+                let ns = attr.string as NSString
+                let title = ns.substring(with: m.range(at: 1))
+                let url = ns.substring(with: m.range(at: 2))
+                let rep = NSAttributedString(string: title, attributes: [
+                    .font: baseFont,
+                    .link: url,
+                    .foregroundColor: NSColor(currentPalette?.accent ?? Color.blue),
+                    .underlineStyle: NSUnderlineStyle.single.rawValue
+                ])
+                attr.replaceCharacters(in: m.range, with: rep)
+            }
+        }
+
+        // 2. Underline <u>...</u>
+        applyTagPattern(#"<u>(.*?)</u>"#, to: attr, tagPrefixLen: 3, tagSuffixLen: 4) { range in
+            attr.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+        }
+
+        // 3. Strikethrough ~~...~~
+        applyTagPattern(#"~~(.*?)~~"#, to: attr, tagPrefixLen: 2, tagSuffixLen: 2) { range in
+            attr.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+        }
+
+        // 4. Inline code `...`
+        applyTagPattern(#"`([^`]+)`"#, to: attr, tagPrefixLen: 1, tagSuffixLen: 1) { range in
+            attr.addAttribute(.font, value: fontForRole("mono"), range: range)
+        }
+
+        // 5. Bold + Italic ***...***
+        applyTagPattern(#"\*\*\*(.*?)\*\*\*"#, to: attr, tagPrefixLen: 3, tagSuffixLen: 3) { range in
+            attr.enumerateAttribute(.font, in: range, options: []) { val, subRange, _ in
+                let curF = (val as? NSFont) ?? baseFont
+                let b = NSFontManager.shared.convert(curF, toHaveTrait: .boldFontMask)
+                let bi = NSFontManager.shared.convert(b, toHaveTrait: .italicFontMask)
+                attr.addAttribute(.font, value: bi, range: subRange)
+            }
+        }
+
+        // 6. Bold **...**
+        applyTagPattern(#"\*\*(.*?)\*\*"#, to: attr, tagPrefixLen: 2, tagSuffixLen: 2) { range in
+            attr.enumerateAttribute(.font, in: range, options: []) { val, subRange, _ in
+                let curF = (val as? NSFont) ?? baseFont
+                let b = NSFontManager.shared.convert(curF, toHaveTrait: .boldFontMask)
+                attr.addAttribute(.font, value: b, range: subRange)
+            }
+        }
+
+        // 7. Italic *...*
+        applyTagPattern(#"\*(.*?)\*"#, to: attr, tagPrefixLen: 1, tagSuffixLen: 1) { range in
+            attr.enumerateAttribute(.font, in: range, options: []) { val, subRange, _ in
+                let curF = (val as? NSFont) ?? baseFont
+                let i = NSFontManager.shared.convert(curF, toHaveTrait: .italicFontMask)
+                attr.addAttribute(.font, value: i, range: subRange)
+            }
+        }
+
+        return attr
+    }
+
+    private func applyTagPattern(_ pattern: String, to attr: NSMutableAttributedString, tagPrefixLen: Int, tagSuffixLen: Int, applyStyle: (NSRange) -> Void) {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+        let matches = regex.matches(in: attr.string, options: [], range: NSRange(location: 0, length: attr.length)).reversed()
+        for m in matches {
+            let matchRange = m.range
+            guard matchRange.length >= tagPrefixLen + tagSuffixLen else { continue }
+            let contentRange = NSRange(location: matchRange.location + tagPrefixLen, length: matchRange.length - tagPrefixLen - tagSuffixLen)
+            applyStyle(contentRange)
+
+            let suffixRange = NSRange(location: matchRange.location + matchRange.length - tagSuffixLen, length: tagSuffixLen)
+            attr.replaceCharacters(in: suffixRange, with: "")
+
+            let prefixRange = NSRange(location: matchRange.location, length: tagPrefixLen)
+            attr.replaceCharacters(in: prefixRange, with: "")
+        }
+    }
+
     func serializeContent() -> String {
         guard let storage = textStorage else { return string }
         let fullString = storage.string as NSString
@@ -810,12 +1138,12 @@ final class PocketTextView: NSTextView {
 
         while lineStart < totalLength {
             let lineRange = fullString.lineRange(for: NSRange(location: lineStart, length: 0))
-            
+
             // Check for checklist attachment in this line
             var isChecklist = false
             var isChecked = false
             var attachmentLength = 0
-            
+
             let scanLimit = min(lineRange.location + 4, lineRange.location + lineRange.length)
             for i in lineRange.location..<scanLimit {
                 if let checked = storage.attribute(.psChecklist, at: i, effectiveRange: nil) as? Bool {
@@ -832,28 +1160,163 @@ final class PocketTextView: NSTextView {
                 }
             }
 
-            var lineContent = ""
+            var linePrefix = ""
             if isChecklist {
-                let prefix = isChecked ? "✓ " : "◯ "
-                let contentStart = lineRange.location + attachmentLength
-                let contentLength = max(0, (lineRange.location + lineRange.length) - contentStart)
-                let textSub = fullString.substring(with: NSRange(location: contentStart, length: contentLength))
-                    .trimmingCharacters(in: .newlines)
-                lineContent = prefix + textSub
+                linePrefix = isChecked ? "✓ " : "◯ "
             } else {
-                var lineResult = ""
-                storage.enumerateAttributes(in: NSRange(location: lineRange.location, length: lineRange.length), options: []) { attrs, range, _ in
-                    if let imageSource = attrs[NSAttributedString.Key.psImageSource] as? String {
-                        let alt = attrs[NSAttributedString.Key.psImageAlt] as? String ?? "Image"
-                        lineResult.append("![\(alt)](\(imageSource))")
-                    } else {
-                        lineResult.append(fullString.substring(with: range))
+                if let role = storage.attribute(NSAttributedString.Key.psStyleRole, at: lineRange.location, effectiveRange: nil) as? String {
+                    switch role {
+                    case "title": linePrefix = "# "
+                    case "heading": linePrefix = "## "
+                    case "subheading": linePrefix = "### "
+                    default: break
                     }
                 }
-                lineContent = lineResult.trimmingCharacters(in: .newlines)
             }
 
-            lines.append(lineContent)
+            // Determine content range excluding checklist attachment and line breaks
+            var lineLengthWithoutNewline = lineRange.length
+            while lineLengthWithoutNewline > 0 {
+                let charCode = fullString.character(at: lineRange.location + lineLengthWithoutNewline - 1)
+                if charCode == 10 || charCode == 13 { // \n or \r
+                    lineLengthWithoutNewline -= 1
+                } else {
+                    break
+                }
+            }
+
+            let contentStart = lineRange.location + attachmentLength
+            let contentLength = max(0, (lineRange.location + lineLengthWithoutNewline) - contentStart)
+
+            if contentLength == 0 {
+                lines.append(linePrefix)
+                lineStart = lineRange.location + lineRange.length
+                continue
+            }
+
+            let evalRange = NSRange(location: contentStart, length: contentLength)
+
+            struct FormattedSpan {
+                var text: String
+                var isBold: Bool
+                var isItalic: Bool
+                var isMono: Bool
+                var isUnderline: Bool
+                var isStrike: Bool
+                var link: String?
+                var image: (alt: String, src: String)?
+            }
+
+            var spans: [FormattedSpan] = []
+
+            storage.enumerateAttributes(in: evalRange, options: []) { attrs, range, _ in
+                if let imageSource = attrs[NSAttributedString.Key.psImageSource] as? String {
+                    let alt = attrs[NSAttributedString.Key.psImageAlt] as? String ?? "Image"
+                    spans.append(FormattedSpan(text: "", isBold: false, isItalic: false, isMono: false, isUnderline: false, isStrike: false, link: nil, image: (alt: alt, src: imageSource)))
+                    return
+                } else if let attachment = attrs[.attachment] as? NSTextAttachment, let img = attachment.image {
+                    if let savedFilename = AttachmentManager.shared.saveImage(img) {
+                        spans.append(FormattedSpan(text: "", isBold: false, isItalic: false, isMono: false, isUnderline: false, isStrike: false, link: nil, image: (alt: "Image", src: savedFilename)))
+                        return
+                    }
+                }
+
+                let subText = fullString.substring(with: range)
+                guard !subText.isEmpty else { return }
+
+                var isBold = false
+                var isItalic = false
+                var isMono = false
+                if let font = attrs[.font] as? NSFont {
+                    let traits = NSFontManager.shared.traits(of: font)
+                    isBold = traits.contains(.boldFontMask)
+                    isItalic = traits.contains(.italicFontMask)
+                    let fName = font.fontName.lowercased()
+                    isMono = font.isFixedPitch || fName.contains("mono") || fName.contains("menlo") || fName.contains("courier") || fName.contains("code")
+                }
+
+                let isUnderline = (attrs[.underlineStyle] as? Int ?? 0) != 0
+                let isStrike = (attrs[.strikethroughStyle] as? Int ?? 0) != 0
+
+                var linkStr: String? = nil
+                if let l = attrs[.link] {
+                    linkStr = (l as? URL)?.absoluteString ?? (l as? String)
+                }
+
+                // If line itself is title or heading, avoid double-wrapping entire line in bold asterisks
+                if linePrefix.hasPrefix("#") {
+                    isBold = false
+                }
+
+                // If checklist is checked, do not duplicate strikethrough markdown
+                let effectiveStrike = isChecklist && isChecked ? false : isStrike
+
+                if let last = spans.last,
+                   last.image == nil,
+                   last.isBold == isBold,
+                   last.isItalic == isItalic,
+                   last.isMono == isMono,
+                   last.isUnderline == isUnderline,
+                   last.isStrike == effectiveStrike,
+                   last.link == linkStr {
+                    spans[spans.count - 1].text += subText
+                } else {
+                    spans.append(FormattedSpan(
+                        text: subText,
+                        isBold: isBold,
+                        isItalic: isItalic,
+                        isMono: isMono,
+                        isUnderline: isUnderline,
+                        isStrike: effectiveStrike,
+                        link: linkStr,
+                        image: nil
+                    ))
+                }
+            }
+
+            var lineResult = ""
+            for span in spans {
+                if let img = span.image {
+                    lineResult += "![\(img.alt)](\(img.src))"
+                    continue
+                }
+
+                let text = span.text
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    lineResult += text
+                    continue
+                }
+
+                let leadingSpaces = String(text.prefix(while: { $0.isWhitespace }))
+                let trailingSpaces = String(text.reversed().prefix(while: { $0.isWhitespace }).reversed())
+                let coreStart = text.index(text.startIndex, offsetBy: leadingSpaces.count)
+                let coreEnd = text.index(text.endIndex, offsetBy: -trailingSpaces.count)
+                var core = String(text[coreStart..<coreEnd])
+
+                if span.isMono {
+                    core = "`\(core)`"
+                }
+                if span.isStrike {
+                    core = "~~\(core)~~"
+                }
+                if span.isUnderline {
+                    core = "<u>\(core)</u>"
+                }
+                if span.isBold && span.isItalic {
+                    core = "***\(core)***"
+                } else if span.isBold {
+                    core = "**\(core)**"
+                } else if span.isItalic {
+                    core = "*\(core)*"
+                }
+                if let link = span.link {
+                    core = "[\(core)](\(link))"
+                }
+
+                lineResult += String(leadingSpaces) + core + String(trailingSpaces)
+            }
+
+            lines.append(linePrefix + lineResult.trimmingCharacters(in: .newlines))
             lineStart = lineRange.location + lineRange.length
         }
 
