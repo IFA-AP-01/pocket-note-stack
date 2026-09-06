@@ -19,6 +19,7 @@ struct NoteFan: View {
     let onNext: () -> Void
     let onCreate: () -> Void
     let onDelete: (UUID) -> Void
+    var onStopDictation: ((UUID) -> Void)? = nil
     let onInteractionChange: (Bool) -> Void
 
     @State private var revealed = false
@@ -117,7 +118,8 @@ struct NoteFan: View {
                     audioLevel: audioLevel,
                     onHoverChange: { updateHover(note: note, inside: $0) },
                     action: { open(note.id) },
-                    onDelete: { onDelete(note.id) }
+                    onDelete: { onDelete(note.id) },
+                    onStopDictation: { onStopDictation?(note.id) }
                 )
                 .draggable(note.id.uuidString)
                 .dropDestination(for: String.self) { values, _ in

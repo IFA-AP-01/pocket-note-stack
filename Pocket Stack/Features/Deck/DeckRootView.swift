@@ -60,6 +60,7 @@ struct DeckRootView: View {
             onNext: { state.tabWindowStart = window.movingNext().startIndex },
             onCreate: controller.createNote,
             onDelete: controller.deleteNote,
+            onStopDictation: { id in controller.toggleDictation(noteID: id) },
             onInteractionChange: controller.fanInteractionChanged
         )
         .onHover { isHovering in

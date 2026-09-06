@@ -310,7 +310,7 @@ struct NoteEditorView: View {
     private var editorContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                NativeWindowCloseButton(action: close, isHovered: isCloseHovered, disabled: bridge.isDictating)
+                NativeWindowCloseButton(action: close, isHovered: isCloseHovered, disabled: false)
                     .frame(width: 14, height: 16)
                     .onHover { isCloseHovered = $0 }
 
@@ -319,7 +319,7 @@ struct NoteEditorView: View {
                     .lineLimit(1)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 7)
-                    .frame(minWidth: dictationState != .idle ? 60 : 90, maxWidth: .infinity, minHeight: 26)
+                    .frame(minWidth: 80, maxWidth: .infinity, minHeight: 26)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(palette.ink.opacity(titleFocused ? 0.09 : 0.045))
@@ -332,12 +332,15 @@ struct NoteEditorView: View {
                     .disabled(bridge.isDictating)
                     .onSubmit { saveContent() }
                     .onExitCommand(perform: close)
-                    .layoutPriority(dictationState != .idle ? 0 : 1)
 
                 if dictationState != .idle {
                     WaveSoundBar(level: audioLevel, color: palette.accent)
-                        .padding(.trailing, 2)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .transition(
+                            .asymmetric(
+                                insertion: .scale(scale: 0.6).combined(with: .opacity).combined(with: .move(edge: .trailing)),
+                                removal: .scale(scale: 0.6).combined(with: .opacity).combined(with: .move(edge: .trailing))
+                            )
+                        )
                 }
 
                 Button(action: onMicrophone) {
@@ -407,6 +410,7 @@ struct NoteEditorView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .frame(height: 42)
+            .animation(.spring(response: 0.3, dampingFraction: 0.82), value: dictationState != .idle)
             .onHover { isHovering in
                 if isHovering {
                     NSCursor.arrow.set()
@@ -461,6 +465,9 @@ struct NoteEditorView: View {
     }
 
     private func close() {
+        if dictationState != .idle {
+            onMicrophone()
+        }
         saveTask?.cancel()
         saveContent()
         onClose()

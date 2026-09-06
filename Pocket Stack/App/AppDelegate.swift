@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func exportDocument() { NoteTransfer.export(.singleDocument, notes: environment.model.notes) }
     @objc func exportArchive() { NoteTransfer.export(.archive, notes: environment.model.notes) }
 
+    @objc func stopDictation() {
+        environment.deckCoordinator.stopDictationAll()
+    }
+
     private func buildMainMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()

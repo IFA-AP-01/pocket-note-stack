@@ -20,20 +20,13 @@ struct NoteTab: View {
     let onHoverChange: (Bool) -> Void
     let action: () -> Void
     let onDelete: () -> Void
+    var onStopDictation: (() -> Void)? = nil
 
     private var palette: NotePaletteColor { NotePalette.color(for: note) }
     private var isExpanded: Bool { isPreviewed && !isOpen }
     private var closedDepth: CGFloat { labelled ? DeckMetrics.Tab.closedDepthLabelled : DeckMetrics.Tab.closedDepthUnlabelled }
     private var closedLength: CGFloat { labelled ? DeckMetrics.Tab.closedLengthLabelled : DeckMetrics.Tab.closedLengthUnlabelled }
     private var hoverDepth: CGFloat { closedDepth + (isHovered && !isOpen && !isExpanded ? DeckMetrics.Tab.hoverDepthIncrease : 0) }
-
-    private var dictationAlignment: Alignment {
-        switch edge {
-        case .left: .bottomTrailing
-        case .right: .bottomLeading
-        case .bottom: .bottomLeading
-        }
-    }
 
     var body: some View {
         Button(action: action) {
@@ -63,12 +56,6 @@ struct NoteTab: View {
         .overlay(alignment: edge.pinAlignment) {
             if note.isPinned { Circle().fill(palette.accent).frame(width: DeckMetrics.Tab.pinIndicatorSize, height: DeckMetrics.Tab.pinIndicatorSize).padding(DeckMetrics.Tab.pinIndicatorPadding) }
         }
-        .overlay(alignment: dictationAlignment) {
-            if isDictating {
-                PulsingVoiceDot()
-                    .padding(DeckMetrics.Tab.pinIndicatorPadding)
-            }
-        }
         .background {
             if isOpen {
                 GeometryReader { geo in
@@ -80,6 +67,14 @@ struct NoteTab: View {
             }
         }
         .contextMenu {
+            if isDictating {
+                Button {
+                    onStopDictation?()
+                } label: {
+                    Label("Stop Dictation", systemImage: "stop.fill")
+                }
+                Divider()
+            }
             Button("Delete", role: .destructive) {
                 onDelete()
             }
@@ -124,28 +119,14 @@ struct NoteTab: View {
     private var titleStrip: some View {
         Group {
             if edge == .bottom {
-                HStack(spacing: 4) {
-                    if isDictating {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 5, height: 5)
-                    }
-                    Text(note.displayTitle.uppercased())
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Text(note.displayTitle.uppercased())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 4) {
-                    if isDictating {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 5, height: 5)
-                    }
-                    Text(note.displayTitle.uppercased())
-                }
-                .frame(width: DeckMetrics.Tab.verticalTitleLength, height: DeckMetrics.Tab.closedDepthLabelled)
-                .rotationEffect(.degrees(edge == .right ? -90 : 90))
-                .frame(width: DeckMetrics.Tab.closedDepthLabelled, height: DeckMetrics.Tab.closedLengthLabelled)
-                .clipped()
+                Text(note.displayTitle.uppercased())
+                    .frame(width: DeckMetrics.Tab.verticalTitleLength, height: DeckMetrics.Tab.closedDepthLabelled)
+                    .rotationEffect(.degrees(edge == .right ? -90 : 90))
+                    .frame(width: DeckMetrics.Tab.closedDepthLabelled, height: DeckMetrics.Tab.closedLengthLabelled)
+                    .clipped()
             }
         }
         .font(.custom(fontName, size: DeckMetrics.Tab.titleFontSize))
@@ -248,28 +229,5 @@ struct NoteTab: View {
             topTrailingRadius: edge == .left || edge == .bottom ? DeckMetrics.Tab.cornerRadius : 0,
             style: .continuous
         )
-    }
-}
-
-private struct PulsingVoiceDot: View {
-    @State private var isPulsing = false
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.red.opacity(0.35))
-                .frame(width: 12, height: 12)
-                .scaleEffect(isPulsing ? 1.4 : 0.8)
-                .opacity(isPulsing ? 0.0 : 0.8)
-
-            Circle()
-                .fill(Color.red)
-                .frame(width: 6, height: 6)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: false)) {
-                isPulsing = true
-            }
-        }
     }
 }

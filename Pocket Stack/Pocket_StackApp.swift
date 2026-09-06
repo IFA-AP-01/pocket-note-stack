@@ -14,30 +14,7 @@ struct Pocket_StackApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            Button("New Note", systemImage: "square.and.pencil") {
-                environment.deckCoordinator.createAndExpand()
-            }
-            .keyboardShortcut("n", modifiers: [.command, .option])
-
-            Button("All Notes", systemImage: "note.text") {
-                environment.libraryWindow.show(archive: false)
-            }
-            Button("Archive", systemImage: "archivebox") {
-                environment.libraryWindow.show(archive: true)
-            }
-
-            Divider()
-
-            PocketStackSettingsButton {
-                Label("Settings…", systemImage: "gearshape")
-            }
-
-            Divider()
-
-            Button("Quit Pocket Stack", systemImage: "power") {
-                NSApp.terminate(nil)
-            }
-            .keyboardShortcut("q")
+            PocketStackMenuContent(environment: environment)
         } label: {
             PocketStackMenuBarLabel()
         }
@@ -50,5 +27,53 @@ struct Pocket_StackApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 760, height: 580)
+    }
+}
+
+private struct PocketStackMenuContent: View {
+    let environment: AppEnvironment
+    @ObservedObject private var dictation: DictationCoordinator
+
+    init(environment: AppEnvironment) {
+        self.environment = environment
+        self._dictation = ObservedObject(wrappedValue: environment.dictation)
+    }
+
+    var body: some View {
+        if dictation.isRecording {
+            Button {
+                environment.deckCoordinator.stopDictationAll()
+            } label: {
+                Label("Stop Dictation", systemImage: "stop.fill")
+            }
+            .keyboardShortcut(".", modifiers: [.command])
+
+            Divider()
+        }
+
+        Button("New Note", systemImage: "square.and.pencil") {
+            environment.deckCoordinator.createAndExpand()
+        }
+        .keyboardShortcut("n", modifiers: [.command, .option])
+
+        Button("All Notes", systemImage: "note.text") {
+            environment.libraryWindow.show(archive: false)
+        }
+        Button("Archive", systemImage: "archivebox") {
+            environment.libraryWindow.show(archive: true)
+        }
+
+        Divider()
+
+        PocketStackSettingsButton {
+            Label("Settings…", systemImage: "gearshape")
+        }
+
+        Divider()
+
+        Button("Quit Pocket Stack", systemImage: "power") {
+            NSApp.terminate(nil)
+        }
+        .keyboardShortcut("q")
     }
 }

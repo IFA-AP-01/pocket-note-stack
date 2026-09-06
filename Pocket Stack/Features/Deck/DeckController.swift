@@ -177,9 +177,17 @@ final class DeckController: NSObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func closeExpanded() { transition(.fan) }
+    func closeExpanded() {
+        if viewState.dictationState != .idle {
+            stopDictationAction()
+        }
+        transition(.fan)
+    }
+
     func collapse() {
-        guard viewState.dictationState == .idle else { return }
+        if viewState.dictationState != .idle {
+            stopDictationAction()
+        }
         transition(.rest)
     }
 
@@ -201,9 +209,12 @@ final class DeckController: NSObject {
     func toggleDictation(noteID: UUID) {
         Task {
             if viewState.dictationState == .idle {
-                viewState.dictationState = .preparing
-                viewState.dictatingNoteID = noteID
-                viewState.audioLevel = 0.0
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    viewState.dictationState = .preparing
+                    viewState.dictatingNoteID = noteID
+                    viewState.audioLevel = 0.0
+                }
+                dictation.beginPreparing()
                 do {
                     try await dictation.start(
                         noteID: noteID,
@@ -212,30 +223,41 @@ final class DeckController: NSObject {
                             self?.viewState.audioLevel = level
                         }
                     ) { [weak self] state in
-                        self?.viewState.dictationState = state
-                        if state == .idle {
-                            self?.viewState.dictatingNoteID = nil
-                            self?.viewState.audioLevel = 0.0
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                            self?.viewState.dictationState = state
+                            if state == .idle {
+                                self?.viewState.dictatingNoteID = nil
+                                self?.viewState.audioLevel = 0.0
+                            }
                         }
                     }
                 } catch {
                     viewState.editorBridge.finishDictation(discardInterim: true)
-                    viewState.dictationState = .failed(error.localizedDescription)
-                    viewState.audioLevel = 0.0
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        viewState.dictationState = .failed(error.localizedDescription)
+                        viewState.audioLevel = 0.0
+                    }
                     try? await Task.sleep(for: .seconds(3))
-                    viewState.dictationState = .idle
-                    viewState.dictatingNoteID = nil
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        viewState.dictationState = .idle
+                        viewState.dictatingNoteID = nil
+                    }
                 }
             } else {
-                viewState.dictationState = .finalizing
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    viewState.dictationState = .finalizing
+                }
                 await dictation.stop()
-                viewState.audioLevel = 0.0
-                viewState.dictatingNoteID = nil
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    viewState.dictationState = .idle
+                    viewState.audioLevel = 0.0
+                    viewState.dictatingNoteID = nil
+                }
             }
         }
     }
 
-    @objc private func stopDictationAction() {
+    @objc func stopDictationAction() {
         guard let noteID = viewState.dictatingNoteID ?? viewState.state.expandedID else { return }
         toggleDictation(noteID: noteID)
     }

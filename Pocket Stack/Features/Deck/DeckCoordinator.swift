@@ -33,6 +33,18 @@ final class DeckCoordinator: NSObject {
 
     func refreshAll() { rebuild() }
 
+    var isDictating: Bool {
+        controllers.values.contains { $0.viewState.dictationState != .idle }
+    }
+
+    func stopDictationAll() {
+        controllers.values.forEach { controller in
+            if controller.viewState.dictationState != .idle {
+                controller.stopDictationAction()
+            }
+        }
+    }
+
     func activate(_ controller: DeckController) {
         controllers.values.filter { $0 !== controller }.forEach { $0.collapse() }
     }
