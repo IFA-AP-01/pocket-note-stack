@@ -6,10 +6,16 @@ final class DictationCoordinator {
     private let preferences: AppPreferences
     private var currentSession: (any DictationSession)?
     private var eventTask: Task<Void, Never>?
+    private var levelTask: Task<Void, Never>?
 
     init(preferences: AppPreferences) { self.preferences = preferences }
 
-    func start(noteID: UUID, bridge: EditorBridge, state: @escaping @MainActor (DictationState) -> Void) async throws {
+    func start(
+        noteID: UUID,
+        bridge: EditorBridge,
+        onAudioLevel: (@MainActor @Sendable (Float) -> Void)? = nil,
+        state: @escaping @MainActor (DictationState) -> Void
+    ) async throws {
         guard currentSession == nil else { return }
 
         if preferences.audioSource != .microphone, !CGPreflightScreenCaptureAccess() {
@@ -31,6 +37,16 @@ final class DictationCoordinator {
         currentSession = session
         bridge.beginDictation()
         state(.listening)
+
+        if let levels = session.audioLevels {
+            levelTask = Task {
+                for await level in levels {
+                    onAudioLevel?(level)
+                }
+                onAudioLevel?(0.0)
+            }
+        }
+
         eventTask = Task { [weak self] in
             do {
                 for try await event in session.events {
@@ -47,17 +63,24 @@ final class DictationCoordinator {
                 try? await Task.sleep(for: .seconds(3))
                 state(.idle)
             }
+            self?.levelTask?.cancel()
+            self?.levelTask = nil
+            onAudioLevel?(0.0)
             self?.currentSession = nil
             self?.eventTask = nil
         }
     }
 
     func stop() async {
+        levelTask?.cancel()
+        levelTask = nil
         guard let currentSession else { return }
         await currentSession.stop()
     }
 
     func cancel() async {
+        levelTask?.cancel()
+        levelTask = nil
         await currentSession?.cancel()
         eventTask?.cancel()
         eventTask = nil

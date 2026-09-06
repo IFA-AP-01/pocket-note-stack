@@ -232,6 +232,7 @@ struct NoteEditorView: View {
     let onClose: () -> Void
     let onMicrophone: () -> Void
     let dictationState: DictationState
+    var audioLevel: Float = 0.0
 
     @State private var draft = ""
     @State private var titleDraft = ""
@@ -318,7 +319,7 @@ struct NoteEditorView: View {
                     .lineLimit(1)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 7)
-                    .frame(minWidth: 90, maxWidth: .infinity, minHeight: 26)
+                    .frame(minWidth: dictationState != .idle ? 60 : 90, maxWidth: .infinity, minHeight: 26)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(palette.ink.opacity(titleFocused ? 0.09 : 0.045))
@@ -331,17 +332,46 @@ struct NoteEditorView: View {
                     .disabled(bridge.isDictating)
                     .onSubmit { saveContent() }
                     .onExitCommand(perform: close)
-                    .layoutPriority(1)
+                    .layoutPriority(dictationState != .idle ? 0 : 1)
 
                 if dictationState != .idle {
-                    Text(dictationLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    WaveSoundBar(level: audioLevel, color: palette.accent)
+                        .padding(.trailing, 2)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
                 Button(action: onMicrophone) {
-                    Image(systemName: dictationState == .idle ? "mic" : "stop.circle.fill")
+                    ZStack(alignment: .center) {
+                        if dictationState == .preparing {
+                            Circle()
+                                .stroke(Color.red.opacity(0.3), lineWidth: 1.5)
+                                .frame(width: 22, height: 22)
+
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.65)
+                        } else if dictationState == .idle {
+                            Image(systemName: "mic")
+                                .font(.system(size: 13))
+                                .foregroundStyle(palette.ink.opacity(0.8))
+                        } else {
+                            // Listening / Finalizing: perfectly concentric geometric stop indicator
+                            Circle()
+                                .stroke(Color.red.opacity(0.32), lineWidth: 1.5)
+                                .frame(width: 22, height: 22)
+
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 14, height: 14)
+
+                            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                                .fill(Color.white)
+                                .frame(width: 5.5, height: 5.5)
+                        }
+                    }
+                    .frame(width: 24, height: 24, alignment: .center)
                 }
+                .buttonStyle(.plain)
                 .help(dictationState == .idle ? "Start dictation" : "Stop dictation")
 
                 Button { handleCommand(.toggleTask) } label: { Image(systemName: "checklist") }

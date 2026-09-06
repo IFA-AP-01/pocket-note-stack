@@ -98,6 +98,9 @@ final class EditorBridge {
         provisionalRange = nil
         committedLength = 0
         textView.isEditable = false
+        textView.showDictationCaret(at: anchorRange.location)
+        textView.window?.invalidateCursorRects(for: textView)
+        NSCursor.operationNotAllowed.set()
         textView.undoManager?.beginUndoGrouping()
         textView.undoManager?.setActionName("Voice Dictation")
     }
@@ -106,8 +109,11 @@ final class EditorBridge {
         guard let textView = currentTextView(), isDictating else { return }
         let range = provisionalRange ?? NSRange(location: anchorRange.location + committedLength, length: anchorRange.length)
         textView.textStorage?.replaceCharacters(in: range, with: text)
-        provisionalRange = NSRange(location: range.location, length: (text as NSString).length)
-        textView.setSelectedRange(NSRange(location: range.location + (text as NSString).length, length: 0))
+        let newLen = (text as NSString).length
+        provisionalRange = NSRange(location: range.location, length: newLen)
+        let targetLocation = range.location + newLen
+        textView.setSelectedRange(NSRange(location: targetLocation, length: 0))
+        textView.showDictationCaret(at: targetLocation)
     }
 
     func commitFinal(_ text: String) {
@@ -119,7 +125,9 @@ final class EditorBridge {
         committedLength += (replacement as NSString).length
         provisionalRange = nil
         textView.didChangeText()
-        textView.setSelectedRange(NSRange(location: anchorRange.location + committedLength, length: 0))
+        let targetLocation = anchorRange.location + committedLength
+        textView.setSelectedRange(NSRange(location: targetLocation, length: 0))
+        textView.showDictationCaret(at: targetLocation)
     }
 
     func finishDictation(discardInterim: Bool) {
@@ -130,6 +138,9 @@ final class EditorBridge {
         provisionalRange = nil
         isDictating = false
         textView.isEditable = true
+        textView.hideDictationCaret()
+        textView.window?.invalidateCursorRects(for: textView)
+        NSCursor.iBeam.set()
         textView.undoManager?.endUndoGrouping()
         textView.didChangeText()
     }

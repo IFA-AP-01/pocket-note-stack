@@ -322,10 +322,20 @@ final class PocketTextView: NSTextView {
         cursorTrackingArea = area
     }
 
+    private var activeCursor: NSCursor {
+        isEditable ? .iBeam : .operationNotAllowed
+    }
+
+    override var isEditable: Bool {
+        didSet {
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
     override func cursorUpdate(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
         if visibleRect.contains(loc) {
-            NSCursor.iBeam.set()
+            activeCursor.set()
         } else {
             NSCursor.arrow.set()
         }
@@ -335,7 +345,7 @@ final class PocketTextView: NSTextView {
         super.mouseMoved(with: event)
         let loc = convert(event.locationInWindow, from: nil)
         if visibleRect.contains(loc) {
-            NSCursor.iBeam.set()
+            activeCursor.set()
         } else {
             NSCursor.arrow.set()
         }
@@ -345,7 +355,7 @@ final class PocketTextView: NSTextView {
         super.mouseEntered(with: event)
         let loc = convert(event.locationInWindow, from: nil)
         if visibleRect.contains(loc) {
-            NSCursor.iBeam.set()
+            activeCursor.set()
         }
     }
 
@@ -357,7 +367,87 @@ final class PocketTextView: NSTextView {
     override func resetCursorRects() {
         super.resetCursorRects()
         discardCursorRects()
-        addCursorRect(visibleRect, cursor: .iBeam)
+        addCursorRect(visibleRect, cursor: activeCursor)
+    }
+
+    // MARK: - Voice Dictation Caret Indicator
+
+    private var dictationCaretView: DictationCaretView?
+
+    func showDictationCaret(at charIndex: Int) {
+        guard let layoutManager, let textContainer else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let totalLength = (string as NSString).length
+        let safeIndex = max(0, min(charIndex, totalLength))
+
+        let origin = textContainerOrigin
+        let caretWidth: CGFloat = 2.0
+        var caretRect: NSRect = .zero
+
+        if safeIndex < totalLength {
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: safeIndex)
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let glyphLoc = layoutManager.location(forGlyphAt: glyphIndex)
+            let font = (textStorage?.attribute(.font, at: safeIndex, effectiveRange: nil) as? NSFont) ?? self.font ?? NSFont.systemFont(ofSize: currentFontSize)
+            let caretHeight = min(font.pointSize * 1.2, max(14, lineRect.height))
+            caretRect = NSRect(
+                x: origin.x + lineRect.origin.x + glyphLoc.x,
+                y: origin.y + lineRect.origin.y + (lineRect.height - caretHeight) / 2,
+                width: caretWidth,
+                height: caretHeight
+            )
+        } else if totalLength > 0 {
+            let lastChar = totalLength - 1
+            let lastCharStr = (string as NSString).substring(with: NSRange(location: lastChar, length: 1))
+            if lastCharStr == "\n" {
+                let extraRect = layoutManager.extraLineFragmentRect
+                let font = self.font ?? NSFont.systemFont(ofSize: currentFontSize)
+                let caretHeight = min(font.pointSize * 1.2, max(14, extraRect.height > 0 ? extraRect.height : font.pointSize * 1.2))
+                caretRect = NSRect(
+                    x: origin.x + extraRect.origin.x,
+                    y: origin.y + extraRect.origin.y + (extraRect.height - caretHeight) / 2,
+                    width: caretWidth,
+                    height: caretHeight
+                )
+            } else {
+                let glyphIndex = layoutManager.glyphIndexForCharacter(at: lastChar)
+                let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+                let glyphLoc = layoutManager.location(forGlyphAt: glyphIndex)
+                let glyphBounds = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+                let font = (textStorage?.attribute(.font, at: lastChar, effectiveRange: nil) as? NSFont) ?? self.font ?? NSFont.systemFont(ofSize: currentFontSize)
+                let caretHeight = min(font.pointSize * 1.2, max(14, lineRect.height))
+                caretRect = NSRect(
+                    x: origin.x + lineRect.origin.x + glyphLoc.x + glyphBounds.width,
+                    y: origin.y + lineRect.origin.y + (lineRect.height - caretHeight) / 2,
+                    width: caretWidth,
+                    height: caretHeight
+                )
+            }
+        } else {
+            let font = self.font ?? NSFont.systemFont(ofSize: currentFontSize)
+            let caretHeight = font.pointSize * 1.2
+            caretRect = NSRect(
+                x: origin.x,
+                y: origin.y,
+                width: caretWidth,
+                height: caretHeight
+            )
+        }
+
+        if dictationCaretView == nil {
+            let caret = DictationCaretView(frame: caretRect, color: insertionPointColor)
+            addSubview(caret)
+            dictationCaretView = caret
+        } else {
+            dictationCaretView?.update(frame: caretRect, color: insertionPointColor)
+        }
+
+        scrollRangeToVisible(NSRange(location: safeIndex, length: 0))
+    }
+
+    func hideDictationCaret() {
+        dictationCaretView?.removeFromSuperview()
+        dictationCaretView = nil
     }
 
     // MARK: - Native Vietnamese Typing & Undo Support
@@ -1725,5 +1815,43 @@ final class PocketTextView: NSTextView {
         guard shouldChangeText(in: targetRange, replacementString: prefix) else { return }
         storage.replaceCharacters(in: targetRange, with: prefix)
         didChangeText()
+    }
+}
+
+final class DictationCaretView: NSView {
+    private let bar = CALayer()
+
+    init(frame: NSRect, color: NSColor) {
+        super.init(frame: frame)
+        wantsLayer = true
+        bar.frame = NSRect(origin: .zero, size: frame.size)
+        bar.cornerRadius = 1.0
+        bar.backgroundColor = color.cgColor
+        layer?.addSublayer(bar)
+        startBlinking()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(frame newFrame: NSRect, color: NSColor) {
+        frame = newFrame
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        bar.frame = NSRect(origin: .zero, size: newFrame.size)
+        bar.backgroundColor = color.cgColor
+        CATransaction.commit()
+    }
+
+    private func startBlinking() {
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = 1.0
+        anim.toValue = 0.0
+        anim.duration = 0.5
+        anim.autoreverses = true
+        anim.repeatCount = .infinity
+        anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        bar.add(anim, forKey: "caretBlink")
     }
 }

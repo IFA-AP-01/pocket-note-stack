@@ -15,6 +15,8 @@ struct NoteTab: View {
     let isOpen: Bool
     let isHovered: Bool
     let isPreviewed: Bool
+    var isDictating: Bool = false
+    var audioLevel: Float = 0.0
     let onHoverChange: (Bool) -> Void
     let action: () -> Void
     let onDelete: () -> Void
@@ -24,6 +26,14 @@ struct NoteTab: View {
     private var closedDepth: CGFloat { labelled ? DeckMetrics.Tab.closedDepthLabelled : DeckMetrics.Tab.closedDepthUnlabelled }
     private var closedLength: CGFloat { labelled ? DeckMetrics.Tab.closedLengthLabelled : DeckMetrics.Tab.closedLengthUnlabelled }
     private var hoverDepth: CGFloat { closedDepth + (isHovered && !isOpen && !isExpanded ? DeckMetrics.Tab.hoverDepthIncrease : 0) }
+
+    private var dictationAlignment: Alignment {
+        switch edge {
+        case .left: .bottomTrailing
+        case .right: .bottomLeading
+        case .bottom: .bottomLeading
+        }
+    }
 
     var body: some View {
         Button(action: action) {
@@ -52,6 +62,12 @@ struct NoteTab: View {
         .buttonStyle(TabPressButtonStyle())
         .overlay(alignment: edge.pinAlignment) {
             if note.isPinned { Circle().fill(palette.accent).frame(width: DeckMetrics.Tab.pinIndicatorSize, height: DeckMetrics.Tab.pinIndicatorSize).padding(DeckMetrics.Tab.pinIndicatorPadding) }
+        }
+        .overlay(alignment: dictationAlignment) {
+            if isDictating {
+                PulsingVoiceDot()
+                    .padding(DeckMetrics.Tab.pinIndicatorPadding)
+            }
         }
         .background {
             if isOpen {
@@ -108,14 +124,28 @@ struct NoteTab: View {
     private var titleStrip: some View {
         Group {
             if edge == .bottom {
-                Text(note.displayTitle.uppercased())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack(spacing: 4) {
+                    if isDictating {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 5, height: 5)
+                    }
+                    Text(note.displayTitle.uppercased())
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Text(note.displayTitle.uppercased())
-                    .frame(width: DeckMetrics.Tab.verticalTitleLength, height: DeckMetrics.Tab.closedDepthLabelled)
-                    .rotationEffect(.degrees(edge == .right ? -90 : 90))
-                    .frame(width: DeckMetrics.Tab.closedDepthLabelled, height: DeckMetrics.Tab.closedLengthLabelled)
-                    .clipped()
+                HStack(spacing: 4) {
+                    if isDictating {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 5, height: 5)
+                    }
+                    Text(note.displayTitle.uppercased())
+                }
+                .frame(width: DeckMetrics.Tab.verticalTitleLength, height: DeckMetrics.Tab.closedDepthLabelled)
+                .rotationEffect(.degrees(edge == .right ? -90 : 90))
+                .frame(width: DeckMetrics.Tab.closedDepthLabelled, height: DeckMetrics.Tab.closedLengthLabelled)
+                .clipped()
             }
         }
         .font(.custom(fontName, size: DeckMetrics.Tab.titleFontSize))
@@ -151,6 +181,19 @@ struct NoteTab: View {
                     .font(.headline)
                     .foregroundStyle(palette.ink)
                 Spacer()
+                if isDictating {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
+                        Text("Dictating")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.red)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.red.opacity(0.12), in: Capsule())
+                }
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 11))
@@ -159,6 +202,34 @@ struct NoteTab: View {
                 .buttonStyle(.plain)
                 .help("Delete note")
             }
+
+            if isDictating {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.accent)
+
+                    Text("Voice input active…")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(palette.ink.opacity(0.8))
+
+                    Spacer()
+
+                    WaveSoundBar(level: audioLevel, color: palette.accent)
+                        .frame(width: 36, height: 14)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(palette.accent.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(palette.accent.opacity(0.3), lineWidth: 1)
+                        )
+                )
+            }
+
             Text(note.body.isEmpty ? "Empty note" : note.body)
                 .font(.custom(fontName, size: DeckMetrics.Tab.bodyFontSize))
                 .foregroundStyle(palette.ink.opacity(0.9))
@@ -177,5 +248,28 @@ struct NoteTab: View {
             topTrailingRadius: edge == .left || edge == .bottom ? DeckMetrics.Tab.cornerRadius : 0,
             style: .continuous
         )
+    }
+}
+
+private struct PulsingVoiceDot: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.red.opacity(0.35))
+                .frame(width: 12, height: 12)
+                .scaleEffect(isPulsing ? 1.4 : 0.8)
+                .opacity(isPulsing ? 0.0 : 0.8)
+
+            Circle()
+                .fill(Color.red)
+                .frame(width: 6, height: 6)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: false)) {
+                isPulsing = true
+            }
+        }
     }
 }

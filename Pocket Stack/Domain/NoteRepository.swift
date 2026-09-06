@@ -52,8 +52,13 @@ enum DictationState: Equatable, Sendable {
 
 protocol DictationSession: Sendable {
     var events: AsyncThrowingStream<TranscriptEvent, Error> { get }
+    var audioLevels: AsyncStream<Float>? { get }
     func stop() async
     func cancel() async
+}
+
+extension DictationSession {
+    var audioLevels: AsyncStream<Float>? { nil }
 }
 
 protocol DictationEngine: Sendable {

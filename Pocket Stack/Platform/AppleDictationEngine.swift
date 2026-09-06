@@ -19,8 +19,10 @@ struct AppleDictationEngine: DictationEngine {
 @available(macOS 26.0, *)
 final class AppleDictationSession: DictationSession, @unchecked Sendable {
     let events: AsyncThrowingStream<TranscriptEvent, Error>
+    let audioLevels: AsyncStream<Float>?
     private let eventContinuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation
     private let inputContinuation: AsyncStream<AnalyzerInput>.Continuation
+    private let audioLevelContinuation: AsyncStream<Float>.Continuation
     private let microphone: MicrophoneCapture?
     private let screenCapture: ScreenAudioCapture?
     private let analyzer: SpeechAnalyzer
@@ -33,6 +35,8 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
         events: AsyncThrowingStream<TranscriptEvent, Error>,
         eventContinuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation,
         inputContinuation: AsyncStream<AnalyzerInput>.Continuation,
+        audioLevels: AsyncStream<Float>,
+        audioLevelContinuation: AsyncStream<Float>.Continuation,
         microphone: MicrophoneCapture?,
         screenCapture: ScreenAudioCapture?,
         analyzer: SpeechAnalyzer
@@ -40,6 +44,8 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
         self.events = events
         self.eventContinuation = eventContinuation
         self.inputContinuation = inputContinuation
+        self.audioLevels = audioLevels
+        self.audioLevelContinuation = audioLevelContinuation
         self.microphone = microphone
         self.screenCapture = screenCapture
         self.analyzer = analyzer
@@ -59,6 +65,7 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
         }
         let (inputs, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
         let (events, eventContinuation) = AsyncThrowingStream.makeStream(of: TranscriptEvent.self)
+        let (levels, levelContinuation) = AsyncStream.makeStream(of: Float.self)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
 
         var microphone: MicrophoneCapture?
@@ -71,6 +78,7 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
                 guard let converted = converter.convert(buffer), converted.frameLength > 0 else {
                     return
                 }
+                levelContinuation.yield(calculateRMS(buffer: converted))
                 inputContinuation.yield(AnalyzerInput(buffer: converted))
             }
             try await mic.start(deviceUID: deviceUID)
@@ -82,6 +90,7 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
                 guard let converted = converter.convert(buffer), converted.frameLength > 0 else {
                     return
                 }
+                levelContinuation.yield(calculateRMS(buffer: converted))
                 inputContinuation.yield(AnalyzerInput(buffer: converted))
             })
             try await screen.start()
@@ -100,6 +109,7 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
             let mic = MicrophoneCapture { buffer in
                 guard let converted = micConverter.convert(buffer), converted.frameLength > 0 else { return }
                 let mixed = mixer.mixMic(converted)
+                levelContinuation.yield(calculateRMS(buffer: mixed))
                 inputContinuation.yield(AnalyzerInput(buffer: mixed))
             }
 
@@ -113,6 +123,8 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
             events: events,
             eventContinuation: eventContinuation,
             inputContinuation: inputContinuation,
+            audioLevels: levels,
+            audioLevelContinuation: levelContinuation,
             microphone: microphone,
             screenCapture: screenCapture,
             analyzer: analyzer
@@ -140,11 +152,41 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
         return session
     }
 
+    private static func calculateRMS(buffer: AVAudioPCMBuffer) -> Float {
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return 0 }
+        if let channel = buffer.floatChannelData?[0] {
+            var sum: Float = 0
+            let step = max(1, frameCount / 256)
+            var count = 0
+            for i in stride(from: 0, to: frameCount, by: step) {
+                let s = channel[i]
+                sum += s * s
+                count += 1
+            }
+            let rms = sqrt(sum / Float(max(1, count)))
+            return min(1.0, max(0.0, rms * 4.0))
+        } else if let channel = buffer.int16ChannelData?[0] {
+            var sum: Double = 0
+            let step = max(1, frameCount / 256)
+            var count = 0
+            for i in stride(from: 0, to: frameCount, by: step) {
+                let s = Double(channel[i]) / 32768.0
+                sum += s * s
+                count += 1
+            }
+            let rms = Float(sqrt(sum / Double(max(1, count))))
+            return min(1.0, max(0.0, rms * 4.0))
+        }
+        return 0
+    }
+
     func stop() async {
         guard lock.withLock({ if stopped { return false }; stopped = true; return true }) else { return }
         microphone?.stop()
         await screenCapture?.stop()
         inputContinuation.finish()
+        audioLevelContinuation.finish()
         await analysisTask?.value
         eventContinuation.finish()
     }
@@ -153,6 +195,7 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
         microphone?.stop()
         await screenCapture?.stop()
         inputContinuation.finish()
+        audioLevelContinuation.finish()
         await analyzer.cancelAndFinishNow()
         analysisTask?.cancel()
         resultTask?.cancel()

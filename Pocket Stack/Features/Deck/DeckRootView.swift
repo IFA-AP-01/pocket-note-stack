@@ -47,6 +47,8 @@ struct DeckRootView: View {
             canMovePrevious: window.canMovePrevious,
             canMoveNext: window.canMoveNext,
             openID: state.state.expandedID,
+            dictatingNoteID: state.dictatingNoteID,
+            audioLevel: state.audioLevel,
             revealTick: state.revealTick,
             style: preferences.style,
             labelFontName: preferences.noteFontName,
@@ -99,7 +101,8 @@ struct DeckRootView: View {
                 activeTabFrame: activeTabFrame,
                 onClose: controller.closeExpanded,
                 onMicrophone: { controller.toggleDictation(noteID: id) },
-                dictationState: state.dictationState
+                dictationState: state.dictationState,
+                audioLevel: state.audioLevel
             )
             .frame(width: preferences.noteSize.width, height: preferences.noteSize.height)
             .transition(.modifier(

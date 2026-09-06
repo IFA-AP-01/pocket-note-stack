@@ -6,6 +6,8 @@ struct NoteFan: View {
     let canMovePrevious: Bool
     let canMoveNext: Bool
     let openID: UUID?
+    var dictatingNoteID: UUID? = nil
+    var audioLevel: Float = 0.0
     let revealTick: Int
     let style: DeckStyle
     let labelFontName: String
@@ -111,6 +113,8 @@ struct NoteFan: View {
                     isOpen: openID == note.id,
                     isHovered: hoveredID == note.id,
                     isPreviewed: previewedID == note.id,
+                    isDictating: dictatingNoteID == note.id,
+                    audioLevel: audioLevel,
                     onHoverChange: { updateHover(note: note, inside: $0) },
                     action: { open(note.id) },
                     onDelete: { onDelete(note.id) }

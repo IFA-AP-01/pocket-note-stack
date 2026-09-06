@@ -30,6 +30,8 @@ final class DeckViewState {
     var fanInteractionActive = false
     var isCollapsing = false
     var dictationState: DictationState = .idle
+    var audioLevel: Float = 0.0
+    var dictatingNoteID: UUID?
     let editorBridge = EditorBridge()
 }
 
@@ -200,32 +202,62 @@ final class DeckController: NSObject {
         Task {
             if viewState.dictationState == .idle {
                 viewState.dictationState = .preparing
+                viewState.dictatingNoteID = noteID
+                viewState.audioLevel = 0.0
                 do {
-                    try await dictation.start(noteID: noteID, bridge: viewState.editorBridge) { [weak self] state in
+                    try await dictation.start(
+                        noteID: noteID,
+                        bridge: viewState.editorBridge,
+                        onAudioLevel: { [weak self] level in
+                            self?.viewState.audioLevel = level
+                        }
+                    ) { [weak self] state in
                         self?.viewState.dictationState = state
+                        if state == .idle {
+                            self?.viewState.dictatingNoteID = nil
+                            self?.viewState.audioLevel = 0.0
+                        }
                     }
                 } catch {
                     viewState.editorBridge.finishDictation(discardInterim: true)
                     viewState.dictationState = .failed(error.localizedDescription)
+                    viewState.audioLevel = 0.0
                     try? await Task.sleep(for: .seconds(3))
                     viewState.dictationState = .idle
+                    viewState.dictatingNoteID = nil
                 }
             } else {
                 viewState.dictationState = .finalizing
                 await dictation.stop()
+                viewState.audioLevel = 0.0
+                viewState.dictatingNoteID = nil
             }
         }
     }
 
+    @objc private func stopDictationAction() {
+        guard let noteID = viewState.dictatingNoteID ?? viewState.state.expandedID else { return }
+        toggleDictation(noteID: noteID)
+    }
+
     func showContextMenu(_ event: NSEvent) {
         let menu = NSMenu()
+        if viewState.dictationState != .idle {
+            let stopItem = menu.addItem(withTitle: "Stop Dictation", action: #selector(stopDictationAction), keyEquivalent: "")
+            stopItem.target = self
+            menu.addItem(.separator())
+        }
         menu.addItem(withTitle: "New Note", action: #selector(AppDelegate.newNote), keyEquivalent: "")
         menu.addItem(withTitle: "All Notes", action: #selector(AppDelegate.openAllNotes), keyEquivalent: "")
         menu.addItem(withTitle: "Archive", action: #selector(AppDelegate.openArchive), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.openSettings), keyEquivalent: "")
         menu.addItem(withTitle: "Quit Pocket Stack", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
-        menu.items.forEach { if $0.action != #selector(NSApplication.terminate(_:)) { $0.target = NSApp.delegate } }
+        menu.items.forEach {
+            if $0.action != #selector(NSApplication.terminate(_:)) && $0.target == nil {
+                $0.target = NSApp.delegate
+            }
+        }
         NSMenu.popUpContextMenu(menu, with: event, for: tracking)
     }
 
