@@ -23,14 +23,15 @@ final class AudioBufferConverter: @unchecked Sendable {
             var error: NSError?
             let status = converter.convert(to: output, error: &error) { _, inputStatus in
                 if supplied {
-                    inputStatus.pointee = .endOfStream
+                    inputStatus.pointee = .noDataNow
                     return nil
                 }
                 supplied = true
                 inputStatus.pointee = .haveData
                 return input
             }
-            return status == .error ? nil : output
+            guard status != .error, output.frameLength > 0 else { return nil }
+            return output
         }
     }
 }

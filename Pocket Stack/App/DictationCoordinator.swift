@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import ScreenCaptureKit
 
 @MainActor
 final class DictationCoordinator {
@@ -10,6 +11,11 @@ final class DictationCoordinator {
 
     func start(noteID: UUID, bridge: EditorBridge, state: @escaping @MainActor (DictationState) -> Void) async throws {
         guard currentSession == nil else { return }
+
+        if preferences.audioSource != .microphone, !CGPreflightScreenCaptureAccess() {
+            throw DictationError.screenCapturePermissionDenied
+        }
+
         let engine: any DictationEngine
         switch preferences.speechProvider {
         case .appleOnDevice:
@@ -21,7 +27,7 @@ final class DictationCoordinator {
             engine = GeminiLiveEngine()
         }
         let locale = preferences.speechProvider == .geminiLive && preferences.speechLocale == "auto" ? nil : preferences.speechLocale
-        let session = try await engine.start(localeIdentifier: locale, deviceUID: preferences.microphoneUID)
+        let session = try await engine.start(localeIdentifier: locale, deviceUID: preferences.microphoneUID, audioSource: preferences.audioSource)
         currentSession = session
         bridge.beginDictation()
         state(.listening)

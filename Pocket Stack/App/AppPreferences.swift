@@ -32,6 +32,7 @@ final class AppPreferences {
     var speechProvider: SpeechProvider { didSet { defaults.set(speechProvider.rawValue, forKey: "speech.provider") } }
     var speechLocale: String { didSet { defaults.set(speechLocale, forKey: "speech.locale") } }
     var microphoneUID: String? { didSet { defaults.set(microphoneUID, forKey: "speech.microphone") } }
+    var audioSource: AudioSource { didSet { defaults.set(audioSource.rawValue, forKey: "speech.audioSource") } }
 
     private init() {
         edge = DeckEdge(rawValue: defaults.string(forKey: "deck.edge") ?? "") ?? .right
@@ -51,6 +52,7 @@ final class AppPreferences {
         }
         speechLocale = defaults.string(forKey: "speech.locale") ?? Locale.current.identifier
         microphoneUID = defaults.string(forKey: "speech.microphone")
+        audioSource = AudioSource(rawValue: defaults.string(forKey: "speech.audioSource") ?? "") ?? .microphone
     }
 
     var noteSize: CGSize {

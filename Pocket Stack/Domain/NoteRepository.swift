@@ -21,6 +21,22 @@ enum SpeechProvider: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 }
 
+enum AudioSource: String, CaseIterable, Codable, Identifiable {
+    case microphone
+    case screen
+    case both
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .microphone: "Microphone"
+        case .screen: "System Audio"
+        case .both: "Both"
+        }
+    }
+}
+
 enum TranscriptEvent: Equatable, Sendable {
     case interim(String)
     case final(String)
@@ -41,5 +57,5 @@ protocol DictationSession: Sendable {
 }
 
 protocol DictationEngine: Sendable {
-    func start(localeIdentifier: String?, deviceUID: String?) async throws -> any DictationSession
+    func start(localeIdentifier: String?, deviceUID: String?, audioSource: AudioSource) async throws -> any DictationSession
 }

@@ -219,6 +219,7 @@ private final class DictationSettingsModel {
     var status = ""
     var isWorking = false
     var isConfirmingKeyDeletion = false
+    var screenCaptureGranted = CGPreflightScreenCaptureAccess()
 
     private let keychain = KeychainStore()
     private var workTask: Task<Void, Never>?
@@ -230,6 +231,7 @@ private final class DictationSettingsModel {
         if #available(macOS 26.0, *), preferences.speechProvider == .appleOnDevice {
             checkAppleModel(preferences: preferences, download: false)
         }
+        screenCaptureGranted = CGPreflightScreenCaptureAccess()
     }
 
     func providerChanged(_ provider: SpeechProvider, preferences: AppPreferences) {
@@ -239,6 +241,7 @@ private final class DictationSettingsModel {
         if #available(macOS 26.0, *), provider == .appleOnDevice {
             checkAppleModel(preferences: preferences, download: false)
         }
+        screenCaptureGranted = CGPreflightScreenCaptureAccess()
     }
 
     func saveAPIKey() -> Bool {
@@ -370,6 +373,37 @@ private struct DictationSettingsView: View {
                 }
             }
 
+            Section("Audio Source") {
+                Picker("Capture", selection: $preferences.audioSource) {
+                    ForEach(AudioSource.allCases) { source in
+                        Text(source.title).tag(source)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: preferences.audioSource) { _, _ in
+                    model.screenCaptureGranted = CGPreflightScreenCaptureAccess()
+                }
+
+                if preferences.audioSource != .microphone {
+                    if !model.screenCaptureGranted {
+                        LabeledContent("Screen Recording") {
+                            Button("Grant Permission") {
+                                CGRequestScreenCaptureAccess()
+                                model.screenCaptureGranted = CGPreflightScreenCaptureAccess()
+                            }
+                        }
+                        Button("Open System Settings") {
+                            openScreenCaptureSettings()
+                        }
+                        Text("Screen audio requires Screen Recording permission. Grant it, then restart Pocket Stack.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        LabeledContent("Screen Recording", value: "Granted")
+                    }
+                }
+            }
+
             if preferences.speechProvider == .appleOnDevice {
                 appleSettings(model: model)
             } else {
@@ -447,26 +481,26 @@ private struct DictationSettingsView: View {
                             ProgressView()
                                 .controlSize(.small)
                         }
-                        Text(model.status.isEmpty ? "Not checked" : model.status)
+                        Text(model.status)
                             .foregroundStyle(.secondary)
-                        Button("Check / Download") {
-                            model.checkAppleModel(preferences: preferences, download: true)
-                        }
-                        .disabled(model.isWorking)
                     }
+                    Spacer()
+                    Button("Check Status") {
+                        model.checkAppleModel(preferences: preferences, download: false)
+                    }
+                    .disabled(model.isWorking)
+                    Button("Download") {
+                        model.checkAppleModel(preferences: preferences, download: true)
+                    }
+                    .disabled(model.isWorking)
                 }
-
-                Text("Audio stays on this Mac. Language assets may need to be downloaded once.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-        } else {
-            ContentUnavailableView(
-                "Apple on-device dictation is unavailable",
-                systemImage: "waveform.badge.exclamationmark",
-                description: Text("Use Gemini Live on this version of macOS.")
-            )
         }
+    }
+
+    private func openScreenCaptureSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+        NSWorkspace.shared.open(url)
     }
 
     private var availableSpeechProviders: [SpeechProvider] {

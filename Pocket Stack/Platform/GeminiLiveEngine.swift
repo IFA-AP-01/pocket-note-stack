@@ -4,11 +4,11 @@ struct GeminiLiveEngine: DictationEngine {
     let keychain: KeychainStore
     init(keychain: KeychainStore = KeychainStore()) { self.keychain = keychain }
 
-    func start(localeIdentifier: String?, deviceUID: String?) async throws -> any DictationSession {
+    func start(localeIdentifier: String?, deviceUID: String?, audioSource: AudioSource) async throws -> any DictationSession {
         guard let key = try keychain.string(for: "gemini-api-key")?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
             throw DictationError.missingAPIKey
         }
-        return try await GeminiDictationSession.create(apiKey: key, localeIdentifier: localeIdentifier, deviceUID: deviceUID)
+        return try await GeminiDictationSession.create(apiKey: key, localeIdentifier: localeIdentifier, deviceUID: deviceUID, audioSource: audioSource)
     }
 
     func testConnection() async throws {
@@ -24,8 +24,7 @@ final class GeminiDictationSession: DictationSession, @unchecked Sendable {
     let events: AsyncThrowingStream<TranscriptEvent, Error>
     private let continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation
     private let socket: GeminiSocket
-    private let microphone: MicrophoneCapture
-    private let encoder: PCM16StreamEncoder
+    private let capture: CompositeAudioCapture
     private var limitTask: Task<Void, Never>?
     private let lock = NSLock()
     private var stopped = false
@@ -34,26 +33,22 @@ final class GeminiDictationSession: DictationSession, @unchecked Sendable {
         events: AsyncThrowingStream<TranscriptEvent, Error>,
         continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation,
         socket: GeminiSocket,
-        microphone: MicrophoneCapture,
-        encoder: PCM16StreamEncoder
+        capture: CompositeAudioCapture
     ) {
         self.events = events
         self.continuation = continuation
         self.socket = socket
-        self.microphone = microphone
-        self.encoder = encoder
+        self.capture = capture
     }
 
-    static func create(apiKey: String, localeIdentifier: String?, deviceUID: String?) async throws -> GeminiDictationSession {
+    static func create(apiKey: String, localeIdentifier: String?, deviceUID: String?, audioSource: AudioSource) async throws -> GeminiDictationSession {
         let (events, continuation) = AsyncThrowingStream.makeStream(of: TranscriptEvent.self)
         let socket = try await GeminiSocket.connect(apiKey: apiKey, localeIdentifier: localeIdentifier, continuation: continuation)
-        let encoder = PCM16StreamEncoder()
-        let microphone = MicrophoneCapture { buffer in
-            let chunks = encoder.encode(buffer)
-            for chunk in chunks { Task { await socket.sendAudio(chunk) } }
+        let capture = CompositeAudioCapture(audioSource: audioSource) { chunk in
+            Task { await socket.sendAudio(chunk) }
         }
-        let session = GeminiDictationSession(events: events, continuation: continuation, socket: socket, microphone: microphone, encoder: encoder)
-        try await microphone.start(deviceUID: deviceUID)
+        let session = GeminiDictationSession(events: events, continuation: continuation, socket: socket, capture: capture)
+        try await capture.start(deviceUID: deviceUID)
         session.limitTask = Task {
             try? await Task.sleep(for: .seconds(570))
             guard !Task.isCancelled else { return }
@@ -65,8 +60,7 @@ final class GeminiDictationSession: DictationSession, @unchecked Sendable {
     func stop() async {
         guard lock.withLock({ if stopped { return false }; stopped = true; return true }) else { return }
         limitTask?.cancel()
-        microphone.stop()
-        if let tail = encoder.flush() { await socket.sendAudio(tail) }
+        await capture.stop()
         await socket.finishAudio()
         try? await Task.sleep(for: .seconds(2))
         await socket.close()
@@ -75,7 +69,7 @@ final class GeminiDictationSession: DictationSession, @unchecked Sendable {
 
     func cancel() async {
         limitTask?.cancel()
-        microphone.stop()
+        await capture.stop()
         await socket.close()
         continuation.finish()
     }
