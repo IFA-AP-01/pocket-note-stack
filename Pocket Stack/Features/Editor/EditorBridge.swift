@@ -58,7 +58,7 @@ final class EditorBridge {
         case .formatMonospaced:
             textView.setMonostyled()
             return true
-        case .toggleTask, .formatCheckList:
+        case .toggleTask:
             textView.toggleChecklist()
             return true
         default:

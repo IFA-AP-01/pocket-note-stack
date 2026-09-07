@@ -20,7 +20,7 @@ final class LibraryWindow: NSWindow {
             case "v":
                 return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
             case "z":
-                return NSApp.sendAction(Selector(("undo:")), to: nil, from: self)
+                return NSApp.sendAction(#selector(PocketTextView.undo(_:)), to: nil, from: self)
             case "a":
                 return NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self)
             case "w":
@@ -32,7 +32,7 @@ final class LibraryWindow: NSWindow {
         } else if flags == [.command, .shift] {
             switch chars {
             case "z":
-                return NSApp.sendAction(Selector(("redo:")), to: nil, from: self)
+                return NSApp.sendAction(#selector(PocketTextView.redo(_:)), to: nil, from: self)
             default:
                 break
             }

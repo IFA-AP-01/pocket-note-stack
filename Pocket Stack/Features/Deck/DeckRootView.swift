@@ -3,6 +3,7 @@ import SwiftUI
 struct DeckRootView: View {
     let model: AppModel
     let preferences: AppPreferences
+    let noteWindows: NoteWindowCoordinator
     let state: DeckViewState
     unowned let controller: DeckController
 
@@ -37,30 +38,27 @@ struct DeckRootView: View {
         }
     }
 
-    @State private var activeTabFrame: CGRect? = nil
-    private var cardGap: CGFloat { 10 }
-
     private var fan: some View {
         NoteFan(
             notes: visibleNotes,
             hasNavigation: model.activeNotes.count > DeckTabWindow.capacity,
             canMovePrevious: window.canMovePrevious,
             canMoveNext: window.canMoveNext,
-            openID: state.state.expandedID,
-            dictatingNoteID: state.dictatingNoteID,
-            audioLevel: state.audioLevel,
+            openIDs: noteWindows.openNoteIDs,
+            dictatingNoteID: noteWindows.dictatingNoteID,
+            audioLevel: noteWindows.audioLevel,
             revealTick: state.revealTick,
             style: preferences.style,
             labelFontName: preferences.noteFontName,
             edge: edge,
             openOnHover: preferences.openOnHover,
-            onOpen: controller.expand,
+            onOpen: controller.openNote,
             onReorder: model.reorder,
             onPrevious: { state.tabWindowStart = window.movingPrevious().startIndex },
             onNext: { state.tabWindowStart = window.movingNext().startIndex },
             onCreate: controller.createNote,
             onDelete: controller.deleteNote,
-            onStopDictation: { id in controller.toggleDictation(noteID: id) },
+            onStopDictation: { _ in noteWindows.stopDictation() },
             onInteractionChange: controller.fanInteractionChanged
         )
         .onHover { isHovering in
@@ -71,46 +69,11 @@ struct DeckRootView: View {
     }
 
     @ViewBuilder private var activeDeck: some View {
-        deckLayout
+        fan
             .coordinateSpace(name: "DeckContainer")
-            .onPreferenceChange(ActiveTabFramePreferenceKey.self) { frame in
-                activeTabFrame = frame
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge.rootAlignment)
+            .onPreferenceChange(NoteTabFramesPreferenceKey.self) { frames in
+                controller.updateTabFrames(frames)
             }
-    }
-
-    @ViewBuilder private var deckLayout: some View {
-        switch edge {
-        case .left:
-            HStack(spacing: cardGap) { fan; sideContent }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        case .right:
-            HStack(spacing: cardGap) { sideContent; fan }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-        case .bottom:
-            VStack(spacing: cardGap) { sideContent; fan }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        }
-    }
-
-    @ViewBuilder private var sideContent: some View {
-        if let id = state.state.expandedID, model.note(id: id) != nil {
-            NoteEditorView(
-                noteID: id,
-                model: model,
-                preferences: preferences,
-                bridge: state.editorBridge,
-                activeTabFrame: activeTabFrame,
-                onClose: controller.closeExpanded,
-                onMicrophone: { controller.toggleDictation(noteID: id) },
-                dictationState: state.dictationState,
-                audioLevel: state.audioLevel
-            )
-            .frame(width: preferences.noteSize.width, height: preferences.noteSize.height)
-            .transition(.modifier(
-                active: NotePullTransition(hidden: true, edge: edge),
-                identity: NotePullTransition(hidden: false, edge: edge)
-            ))
-            .id(id)
-        }
     }
 }

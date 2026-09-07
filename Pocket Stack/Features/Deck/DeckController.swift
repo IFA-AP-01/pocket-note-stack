@@ -29,10 +29,6 @@ final class DeckViewState {
     var revealTick = 0
     var fanInteractionActive = false
     var isCollapsing = false
-    var dictationState: DictationState = .idle
-    var audioLevel: Float = 0.0
-    var dictatingNoteID: UUID?
-    let editorBridge = EditorBridge()
 }
 
 @MainActor
@@ -67,24 +63,28 @@ final class DeckController: NSObject {
     let viewState = DeckViewState()
     private let model: AppModel
     private let preferences: AppPreferences
-    private let dictation: DictationCoordinator
+    private let noteWindows: NoteWindowCoordinator
     private let panel = DeckPanel()
     private var tracking: DeckTrackingView!
     private var hosting: FirstMouseHostingView<DeckRootView>!
     private var shrinkWork: DispatchWorkItem?
     private let transitionScheduler = DeckTransitionScheduler()
+    private var tabFrames: [UUID: CGRect] = [:]
+    private var anchoredNoteIDs: Set<UUID> = []
+    private var pendingOpenNoteIDs: Set<UUID> = []
+    private var pendingState: DeckState?
     weak var coordinator: DeckCoordinator?
 
-    init(displayID: CGDirectDisplayID, model: AppModel, preferences: AppPreferences, dictation: DictationCoordinator) {
+    init(displayID: CGDirectDisplayID, model: AppModel, preferences: AppPreferences, noteWindows: NoteWindowCoordinator) {
         self.displayID = displayID
         self.model = model
         self.preferences = preferences
-        self.dictation = dictation
+        self.noteWindows = noteWindows
         super.init()
         tracking = DeckTrackingView(frame: panel.contentView?.bounds ?? .zero)
         tracking.controller = self
         tracking.autoresizingMask = [.width, .height]
-        hosting = FirstMouseHostingView(rootView: DeckRootView(model: model, preferences: preferences, state: viewState, controller: self))
+        hosting = FirstMouseHostingView(rootView: DeckRootView(model: model, preferences: preferences, noteWindows: noteWindows, state: viewState, controller: self))
         hosting.frame = tracking.bounds
         hosting.autoresizingMask = [.width, .height]
         tracking.addSubview(hosting)
@@ -95,6 +95,8 @@ final class DeckController: NSObject {
 
     func invalidate() {
         transitionScheduler.cancelPending()
+        pendingState = nil
+        pendingOpenNoteIDs.removeAll()
         shrinkWork?.cancel()
         restTransitionWork?.cancel()
         panel.orderOut(nil)
@@ -109,7 +111,7 @@ final class DeckController: NSObject {
     func refresh() {
         panel.level = preferences.showOverFullScreen ? .statusBar : .floating
         layout()
-        hosting.rootView = DeckRootView(model: model, preferences: preferences, state: viewState, controller: self)
+        hosting.rootView = DeckRootView(model: model, preferences: preferences, noteWindows: noteWindows, state: viewState, controller: self)
     }
 
     func updateLayout() {
@@ -120,6 +122,7 @@ final class DeckController: NSObject {
 
     func scheduleTransitionToRest() {
         guard viewState.state == .fan,
+              anchoredNoteIDs.isEmpty,
               !viewState.fanInteractionActive,
               !viewState.isCollapsing,
               restTransitionWork == nil else { return }
@@ -127,6 +130,7 @@ final class DeckController: NSObject {
             self?.restTransitionWork = nil
             guard let self,
                   self.viewState.state == .fan,
+                  self.anchoredNoteIDs.isEmpty,
                   !self.viewState.fanInteractionActive,
                   !self.viewState.isCollapsing else { return }
             self.transition(.rest)
@@ -149,7 +153,7 @@ final class DeckController: NSObject {
     }
 
     func pointerExited() {
-        guard viewState.state == .fan else { return }
+        guard viewState.state == .fan, anchoredNoteIDs.isEmpty else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             guard let self, self.viewState.state == .fan else { return }
             self.viewState.fanInteractionActive = false
@@ -168,33 +172,30 @@ final class DeckController: NSObject {
         }
     }
 
-    func expand(_ id: UUID) {
+    func openNote(_ id: UUID) {
         cancelTransitionToRest()
         cancelCollapseAnimation()
-        guard viewState.dictationState == .idle else { return }
-        transition(.expanded(id))
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func closeExpanded() {
-        if viewState.dictationState != .idle {
-            stopDictationAction()
+        if noteWindows.isOpen(noteID: id) {
+            noteWindows.open(noteID: id, anchor: nil)
+            return
         }
+        ensureTabVisible(id)
         transition(.fan)
+        if let anchor = anchor(for: id), !isTabExpanded(tabFrames[id]) {
+            noteWindows.open(noteID: id, anchor: anchor)
+        } else {
+            pendingOpenNoteIDs.insert(id)
+        }
     }
 
     func collapse() {
-        if viewState.dictationState != .idle {
-            stopDictationAction()
-        }
+        guard anchoredNoteIDs.isEmpty else { return }
         transition(.rest)
     }
 
     func deleteNote(_ id: UUID) {
-        if viewState.state.expandedID == id {
-            closeExpanded()
-        }
+        pendingOpenNoteIDs.remove(id)
+        noteWindows.close(noteID: id)
         withAnimation(.easeInOut(duration: 0.25)) {
             model.delete(id: id)
         }
@@ -203,76 +204,16 @@ final class DeckController: NSObject {
     func createNote() {
         viewState.tabWindowStart = 0
         let note = model.create()
-        expand(note.id)
-    }
-
-    func toggleDictation(noteID: UUID) {
-        Task {
-            if viewState.dictationState == .idle {
-                let readiness = await dictation.checkProviderReadiness()
-                guard readiness.isReady else {
-                    UserDefaults.standard.set(SettingsSection.dictation.rawValue, forKey: "settings.selectedPane")
-                    NotificationCenter.default.post(name: .pocketStackOpenSettings, object: nil)
-                    NotificationCenter.default.post(name: .pocketStackVoiceNoteWarning, object: readiness.reason)
-                    return
-                }
-
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                    viewState.dictationState = .preparing
-                    viewState.dictatingNoteID = noteID
-                    viewState.audioLevel = 0.0
-                }
-                dictation.beginPreparing()
-                do {
-                    try await dictation.start(
-                        noteID: noteID,
-                        bridge: viewState.editorBridge,
-                        onAudioLevel: { [weak self] level in
-                            self?.viewState.audioLevel = level
-                        }
-                    ) { [weak self] state in
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                            self?.viewState.dictationState = state
-                            if state == .idle {
-                                self?.viewState.dictatingNoteID = nil
-                                self?.viewState.audioLevel = 0.0
-                            }
-                        }
-                    }
-                } catch {
-                    viewState.editorBridge.finishDictation(discardInterim: true)
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                        viewState.dictationState = .failed(error.localizedDescription)
-                        viewState.audioLevel = 0.0
-                    }
-                    try? await Task.sleep(for: .seconds(3))
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                        viewState.dictationState = .idle
-                        viewState.dictatingNoteID = nil
-                    }
-                }
-            } else {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                    viewState.dictationState = .finalizing
-                }
-                await dictation.stop()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                    viewState.dictationState = .idle
-                    viewState.audioLevel = 0.0
-                    viewState.dictatingNoteID = nil
-                }
-            }
-        }
+        openNote(note.id)
     }
 
     @objc func stopDictationAction() {
-        guard let noteID = viewState.dictatingNoteID ?? viewState.state.expandedID else { return }
-        toggleDictation(noteID: noteID)
+        noteWindows.stopDictation()
     }
 
     func showContextMenu(_ event: NSEvent) {
         let menu = NSMenu()
-        if viewState.dictationState != .idle {
+        if noteWindows.isDictating {
             let stopItem = menu.addItem(withTitle: "Stop Dictation", action: #selector(stopDictationAction), keyEquivalent: "")
             stopItem.target = self
             menu.addItem(.separator())
@@ -291,8 +232,118 @@ final class DeckController: NSObject {
         NSMenu.popUpContextMenu(menu, with: event, for: tracking)
     }
 
+    func updateTabFrames(_ localFrames: [UUID: CGRect]) {
+        guard let screen else { return }
+        tabFrames = localFrames.mapValues { frame in
+            let converted = panel.convertToScreen(hosting.convert(frame, to: nil))
+            return stableTabFrame(converted, on: screen)
+        }
+        let anchors = tabFrames.mapValues {
+            NoteWindowAnchor(displayID: displayID, edge: preferences.edge, tabFrame: $0)
+        }
+        noteWindows.updateAnchors(anchors, displayID: displayID)
+        let readyNoteIDs = pendingOpenNoteIDs.filter {
+            anchors[$0] != nil && !isTabExpanded(tabFrames[$0])
+        }
+        for noteID in readyNoteIDs {
+            guard let anchor = anchors[noteID] else { continue }
+            pendingOpenNoteIDs.remove(noteID)
+            noteWindows.open(noteID: noteID, anchor: anchor)
+        }
+    }
+
+    func attachmentChanged(noteID: UUID, attached: Bool) {
+        if attached {
+            anchoredNoteIDs.insert(noteID)
+            cancelTransitionToRest()
+            cancelCollapseAnimation()
+            ensureTabVisible(noteID)
+            transition(.fan)
+        } else {
+            anchoredNoteIDs.remove(noteID)
+            if anchoredNoteIDs.isEmpty, !viewState.fanInteractionActive {
+                scheduleTransitionToRest()
+            }
+        }
+    }
+
+    func isNearFan(noteID: UUID, windowFrame: CGRect) -> Bool {
+        let threshold: CGFloat = 100
+        if let tabFrame = tabFrames[noteID] {
+            switch preferences.edge {
+            case .left:
+                return abs(windowFrame.minX - tabFrame.maxX) <= threshold
+                    && windowFrame.minY - threshold <= tabFrame.midY
+                    && tabFrame.midY <= windowFrame.maxY + threshold
+            case .right:
+                return abs(windowFrame.maxX - tabFrame.minX) <= threshold
+                    && windowFrame.minY - threshold <= tabFrame.midY
+                    && tabFrame.midY <= windowFrame.maxY + threshold
+            case .bottom:
+                return abs(windowFrame.minY - tabFrame.maxY) <= threshold
+                    && windowFrame.minX - threshold <= tabFrame.midX
+                    && tabFrame.midX <= windowFrame.maxX + threshold
+            }
+        }
+        guard let screen else { return false }
+        switch preferences.edge {
+        case .left: return abs(windowFrame.minX - (screen.frame.minX + DeckMetrics.Fan.crossAxisSize)) <= threshold
+        case .right: return abs(windowFrame.maxX - (screen.frame.maxX - DeckMetrics.Fan.crossAxisSize)) <= threshold
+        case .bottom: return abs(windowFrame.minY - (screen.visibleFrame.minY + DeckMetrics.Fan.crossAxisSize)) <= threshold
+        }
+    }
+
+    func prepareReattachment(noteID: UUID) {
+        guard model.activeNotes.contains(where: { $0.id == noteID }) else { return }
+        cancelTransitionToRest()
+        ensureTabVisible(noteID)
+        transition(.fan)
+    }
+
+    private func ensureTabVisible(_ noteID: UUID) {
+        guard let index = model.activeNotes.firstIndex(where: { $0.id == noteID }) else { return }
+        let window = DeckTabWindow(startIndex: viewState.tabWindowStart, noteCount: model.activeNotes.count)
+        if index < window.visibleRange.lowerBound {
+            viewState.tabWindowStart = index
+        } else if index >= window.visibleRange.upperBound {
+            viewState.tabWindowStart = max(0, index - DeckTabWindow.capacity + 1)
+        }
+    }
+
+    private func anchor(for noteID: UUID) -> NoteWindowAnchor? {
+        guard let frame = tabFrames[noteID] else { return nil }
+        return NoteWindowAnchor(displayID: displayID, edge: preferences.edge, tabFrame: frame)
+    }
+
+    private func stableTabFrame(_ frame: CGRect, on screen: NSScreen) -> CGRect {
+        let depth = preferences.style == .labelled
+            ? DeckMetrics.Tab.closedDepthLabelled
+            : DeckMetrics.Tab.closedDepthUnlabelled
+        switch preferences.edge {
+        case .left:
+            return CGRect(x: screen.frame.minX, y: frame.minY, width: depth, height: frame.height)
+        case .right:
+            return CGRect(x: screen.frame.maxX - depth, y: frame.minY, width: depth, height: frame.height)
+        case .bottom:
+            return CGRect(x: frame.minX, y: screen.visibleFrame.minY, width: frame.width, height: depth)
+        }
+    }
+
+    private func isTabExpanded(_ frame: CGRect?) -> Bool {
+        guard let frame else { return true }
+        let closedLength = preferences.style == .labelled
+            ? DeckMetrics.Tab.closedLengthLabelled
+            : DeckMetrics.Tab.closedLengthUnlabelled
+        switch preferences.edge {
+        case .left, .right: return frame.height > closedLength + 2
+        case .bottom: return frame.width > closedLength + 2
+        }
+    }
+
     private func transition(_ newState: DeckState) {
+        if pendingState == newState { return }
         let cancelledDeferredTransition = transitionScheduler.cancelPending()
+        pendingState = nil
         let oldState = viewState.state
         guard oldState != newState else {
             if cancelledDeferredTransition { layout(for: newState) }
@@ -306,8 +357,11 @@ final class DeckController: NSObject {
         if newState.rank >= oldState.rank {
             layout(for: newState)
             if newState == .fan { viewState.revealTick &+= 1 }
+            pendingState = newState
             transitionScheduler.schedule(after: 2.0 / 60.0) { [weak self] in
                 guard let self else { return }
+                guard self.pendingState == newState else { return }
+                self.pendingState = nil
                 withAnimation(.easeOut(duration: 0.3)) {
                     self.viewState.state = newState
                 }

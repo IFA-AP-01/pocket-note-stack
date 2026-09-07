@@ -42,7 +42,7 @@ private struct PocketStackMenuContent: View {
     var body: some View {
         if dictation.isRecording {
             Button {
-                environment.deckCoordinator.stopDictationAll()
+                environment.noteWindows.stopDictation()
             } label: {
                 Label("Stop Dictation", systemImage: "stop.fill")
             }

@@ -4,14 +4,14 @@ import AppKit
 final class DeckCoordinator: NSObject {
     private let model: AppModel
     private let preferences: AppPreferences
-    private let dictation: DictationCoordinator
+    private let noteWindows: NoteWindowCoordinator
     private var controllers: [CGDirectDisplayID: DeckController] = [:]
     private var screenObserver: NSObjectProtocol?
 
-    init(model: AppModel, preferences: AppPreferences, dictation: DictationCoordinator) {
+    init(model: AppModel, preferences: AppPreferences, noteWindows: NoteWindowCoordinator) {
         self.model = model
         self.preferences = preferences
-        self.dictation = dictation
+        self.noteWindows = noteWindows
         super.init()
     }
 
@@ -33,17 +33,9 @@ final class DeckCoordinator: NSObject {
 
     func refreshAll() { rebuild() }
 
-    var isDictating: Bool {
-        controllers.values.contains { $0.viewState.dictationState != .idle }
-    }
+    var isDictating: Bool { noteWindows.isDictating }
 
-    func stopDictationAll() {
-        controllers.values.forEach { controller in
-            if controller.viewState.dictationState != .idle {
-                controller.stopDictationAction()
-            }
-        }
-    }
+    func stopDictationAll() { noteWindows.stopDictation() }
 
     func activate(_ controller: DeckController) {
         controllers.values.filter { $0 !== controller }.forEach { $0.collapse() }
@@ -52,11 +44,11 @@ final class DeckCoordinator: NSObject {
     func createAndExpand() {
         let note = model.create()
         let target = controllerUnderPointer() ?? controllers.values.first
-        target?.expand(note.id)
+        target?.openNote(note.id)
     }
 
     func expand(noteID: UUID) {
-        (controllerUnderPointer() ?? controllers.values.first)?.expand(noteID)
+        (controllerUnderPointer() ?? controllers.values.first)?.openNote(noteID)
     }
 
     private func rebuild() {
@@ -67,14 +59,26 @@ final class DeckCoordinator: NSObject {
         controllers = controllers.filter { ids.contains($0.key) }
         for screen in screens {
             guard let id = Self.displayID(screen), controllers[id] == nil else { continue }
-            let controller = DeckController(displayID: id, model: model, preferences: preferences, dictation: dictation)
+            let controller = DeckController(displayID: id, model: model, preferences: preferences, noteWindows: noteWindows)
             controller.coordinator = self
             controllers[id] = controller
         }
         controllers.values.forEach { $0.refresh() }
+        noteWindows.screenParametersChanged()
     }
 
     @objc private func screenParametersChanged() { rebuild() }
+
+    func attachmentChanged(noteID: UUID, displayID: CGDirectDisplayID, attached: Bool) {
+        controllers[displayID]?.attachmentChanged(noteID: noteID, attached: attached)
+    }
+
+    func prepareReattachment(noteID: UUID, windowFrame: CGRect) {
+        for controller in controllers.values where controller.isNearFan(noteID: noteID, windowFrame: windowFrame) {
+            controller.prepareReattachment(noteID: noteID)
+            return
+        }
+    }
 
     private func targetedScreens() -> [NSScreen] {
         let target = preferences.displayTarget

@@ -225,20 +225,20 @@ final class PocketTextView: NSTextView {
     }
 
     override func responds(to aSelector: Selector!) -> Bool {
-        if aSelector == #selector(undo(_:)) || aSelector == Selector(("undo:")) {
+        if aSelector == #selector(undo(_:)) {
             return undoManager?.canUndo ?? false
         }
-        if aSelector == #selector(redo(_:)) || aSelector == Selector(("redo:")) {
+        if aSelector == #selector(redo(_:)) {
             return undoManager?.canRedo ?? false
         }
         return super.responds(to: aSelector)
     }
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(undo(_:)) || item.action == Selector(("undo:")) {
+        if item.action == #selector(undo(_:)) {
             return undoManager?.canUndo ?? false
         }
-        if item.action == #selector(redo(_:)) || item.action == Selector(("redo:")) {
+        if item.action == #selector(redo(_:)) {
             return undoManager?.canRedo ?? false
         }
         return super.validateUserInterfaceItem(item)

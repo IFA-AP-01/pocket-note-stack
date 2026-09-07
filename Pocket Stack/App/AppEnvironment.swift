@@ -7,6 +7,7 @@ final class AppEnvironment {
     let repository: SQLiteNoteRepository
     let model: AppModel
     let dictation: DictationCoordinator
+    let noteWindows: NoteWindowCoordinator
     let deckCoordinator: DeckCoordinator
     let libraryWindow: LibraryWindowController
     let undoToast: UndoToastController
@@ -17,8 +18,10 @@ final class AppEnvironment {
         catch { fatalError("Unable to create notes repository: \(error.localizedDescription)") }
         model = AppModel(repository: repository)
         dictation = DictationCoordinator(preferences: preferences)
-        deckCoordinator = DeckCoordinator(model: model, preferences: preferences, dictation: dictation)
+        noteWindows = NoteWindowCoordinator(model: model, preferences: preferences, dictation: dictation)
+        deckCoordinator = DeckCoordinator(model: model, preferences: preferences, noteWindows: noteWindows)
         libraryWindow = LibraryWindowController(model: model)
         undoToast = UndoToastController(model: model)
+        noteWindows.deckCoordinator = deckCoordinator
     }
 }

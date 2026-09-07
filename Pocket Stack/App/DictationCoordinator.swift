@@ -162,6 +162,7 @@ final class DictationCoordinator: ObservableObject {
         levelTask = nil
         guard let currentSession else { return }
         await currentSession.stop()
+        await eventTask?.value
     }
 
     func cancel() async {

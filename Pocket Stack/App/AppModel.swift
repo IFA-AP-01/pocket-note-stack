@@ -2,6 +2,10 @@ import AppKit
 import Foundation
 import Observation
 
+extension Notification.Name {
+    static let pocketStackNotesDidChange = Notification.Name("PocketStackNotesDidChange")
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -24,6 +28,7 @@ final class AppModel {
                 guard let self else { return }
                 if notes != snapshot {
                     notes = snapshot
+                    NotificationCenter.default.post(name: .pocketStackNotesDidChange, object: self)
                 }
                 if snapshot.isEmpty { await seedWelcomeNote() }
             }
@@ -92,6 +97,7 @@ final class AppModel {
         guard let note = note(id: id) else { return }
         pendingDelete = note
         notes.removeAll { $0.id == id }
+        NotificationCenter.default.post(name: .pocketStackNotesDidChange, object: self)
         Task { await perform { try await self.repository.delete(id: id) } }
         undoTask?.cancel()
         undoTask = Task { [weak self] in
@@ -106,6 +112,7 @@ final class AppModel {
         undoTask?.cancel()
         pendingDelete = nil
         notes.append(note)
+        NotificationCenter.default.post(name: .pocketStackNotesDidChange, object: self)
         persist(note)
     }
 

@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         HotKeyManager.shared.unregisterAll()
         environment.deckCoordinator.stop()
+        environment.noteWindows.stop()
         environment.undoToast.stop()
         Task { await environment.dictation.cancel() }
     }
@@ -39,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func exportArchive() { NoteTransfer.export(.archive, notes: environment.model.notes) }
 
     @objc func stopDictation() {
-        environment.deckCoordinator.stopDictationAll()
+        environment.noteWindows.stopDictation()
     }
 
     private func buildMainMenu() {
@@ -64,8 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appItem.submenu = appMenu; main.addItem(appItem)
 
         let editItem = NSMenuItem(); let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Undo", action: #selector(PocketTextView.undo(_:)), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: #selector(PocketTextView.redo(_:)), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         edit.addItem(.separator())
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")

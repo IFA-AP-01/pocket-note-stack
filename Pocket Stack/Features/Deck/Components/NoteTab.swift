@@ -1,9 +1,9 @@
 import SwiftUI
 
-struct ActiveTabFramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect? = nil
-    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
-        value = value ?? nextValue()
+struct NoteTabFramesPreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 
@@ -57,13 +57,11 @@ struct NoteTab: View {
             if note.isPinned { Circle().fill(palette.accent).frame(width: DeckMetrics.Tab.pinIndicatorSize, height: DeckMetrics.Tab.pinIndicatorSize).padding(DeckMetrics.Tab.pinIndicatorPadding) }
         }
         .background {
-            if isOpen {
-                GeometryReader { geo in
-                    Color.clear.preference(
-                        key: ActiveTabFramePreferenceKey.self,
-                        value: geo.frame(in: .named("DeckContainer"))
-                    )
-                }
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: NoteTabFramesPreferenceKey.self,
+                    value: [note.id: geo.frame(in: .named("DeckContainer"))]
+                )
             }
         }
         .contextMenu {

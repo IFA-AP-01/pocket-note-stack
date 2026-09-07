@@ -5,7 +5,7 @@ struct NoteFan: View {
     let hasNavigation: Bool
     let canMovePrevious: Bool
     let canMoveNext: Bool
-    let openID: UUID?
+    let openIDs: Set<UUID>
     var dictatingNoteID: UUID? = nil
     var audioLevel: Float = 0.0
     let revealTick: Int
@@ -111,7 +111,7 @@ struct NoteFan: View {
                     labelled: style == .labelled,
                     fontName: labelFontName.isEmpty ? "Noteworthy-Light" : labelFontName,
                     edge: edge,
-                    isOpen: openID == note.id,
+                    isOpen: openIDs.contains(note.id),
                     isHovered: hoveredID == note.id,
                     isPreviewed: previewedID == note.id,
                     isDictating: dictatingNoteID == note.id,
