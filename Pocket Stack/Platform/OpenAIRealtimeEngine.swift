@@ -1,0 +1,292 @@
+import Foundation
+
+struct OpenAIRealtimeEngine: DictationEngine {
+    let keychain: KeychainStore
+    init(keychain: KeychainStore = KeychainStore()) { self.keychain = keychain }
+
+    func start(localeIdentifier: String?, deviceUID: String?, audioSource: AudioSource) async throws -> any DictationSession {
+        guard let key = try keychain.string(for: "openai-api-key")?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+            throw DictationError.missingAPIKey
+        }
+        return try await OpenAIDictationSession.create(apiKey: key, localeIdentifier: localeIdentifier, deviceUID: deviceUID, audioSource: audioSource)
+    }
+
+    func testConnection() async throws {
+        guard let key = try keychain.string(for: "openai-api-key")?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+            throw DictationError.missingAPIKey
+        }
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw DictationError.invalidServerResponse
+        }
+        if httpResponse.statusCode == 401 {
+            throw NSError(domain: "OpenAI", code: 401, userInfo: [NSLocalizedDescriptionKey: "Invalid OpenAI API key."])
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw NSError(domain: "OpenAI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "OpenAI returned status \(httpResponse.statusCode)"])
+        }
+    }
+}
+
+final class OpenAIDictationSession: DictationSession, @unchecked Sendable {
+    let events: AsyncThrowingStream<TranscriptEvent, Error>
+    private let continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation
+    private let socket: OpenAISocket
+    private let capture: CompositeAudioCapture
+    private var limitTask: Task<Void, Never>?
+    private let lock = NSLock()
+    private var stopped = false
+
+    private init(
+        events: AsyncThrowingStream<TranscriptEvent, Error>,
+        continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation,
+        socket: OpenAISocket,
+        capture: CompositeAudioCapture
+    ) {
+        self.events = events
+        self.continuation = continuation
+        self.socket = socket
+        self.capture = capture
+    }
+
+    static func create(apiKey: String, localeIdentifier: String?, deviceUID: String?, audioSource: AudioSource) async throws -> OpenAIDictationSession {
+        let (events, continuation) = AsyncThrowingStream.makeStream(of: TranscriptEvent.self)
+        let socket = try await OpenAISocket.connect(apiKey: apiKey, localeIdentifier: localeIdentifier, continuation: continuation)
+        let capture = CompositeAudioCapture(audioSource: audioSource) { chunk in
+            // Resample 16kHz PCM16 to 24kHz PCM16 for OpenAI Realtime
+            let resampled = Self.resample16kTo24k(data: chunk)
+            Task { await socket.sendAudio(resampled) }
+        }
+        let session = OpenAIDictationSession(events: events, continuation: continuation, socket: socket, capture: capture)
+        try await capture.start(deviceUID: deviceUID)
+        session.limitTask = Task {
+            try? await Task.sleep(for: .seconds(570))
+            guard !Task.isCancelled else { return }
+            await session.stop()
+        }
+        return session
+    }
+
+    func stop() async {
+        guard lock.withLock({ if stopped { return false }; stopped = true; return true }) else { return }
+        limitTask?.cancel()
+        await capture.stop()
+        await socket.finishAudio()
+        try? await Task.sleep(for: .seconds(2))
+        await socket.close()
+        continuation.finish()
+    }
+
+    func cancel() async {
+        limitTask?.cancel()
+        await capture.stop()
+        await socket.close()
+        continuation.finish()
+    }
+
+    /// Resamples 16-bit mono PCM from 16kHz to 24kHz (1.5x upsample) using linear interpolation.
+    static func resample16kTo24k(data: Data) -> Data {
+        let sampleCount = data.count / 2
+        guard sampleCount > 1 else { return data }
+
+        return data.withUnsafeBytes { rawBuffer -> Data in
+            guard let srcSamples = rawBuffer.bindMemory(to: Int16.self).baseAddress else {
+                return data
+            }
+
+            let dstSampleCount = Int(Double(sampleCount) * 1.5)
+            var dstData = Data(count: dstSampleCount * 2)
+
+            dstData.withUnsafeMutableBytes { dstBuffer in
+                guard let dstSamples = dstBuffer.bindMemory(to: Int16.self).baseAddress else { return }
+
+                for i in 0..<dstSampleCount {
+                    let srcPos = Double(i) / 1.5
+                    let idx0 = Int(srcPos)
+                    let frac = srcPos - Double(idx0)
+
+                    if idx0 + 1 < sampleCount {
+                        let s0 = Double(srcSamples[idx0])
+                        let s1 = Double(srcSamples[idx0 + 1])
+                        let interpolated = s0 + frac * (s1 - s0)
+                        dstSamples[i] = Int16(clamping: Int(interpolated))
+                    } else {
+                        dstSamples[i] = srcSamples[min(idx0, sampleCount - 1)]
+                    }
+                }
+            }
+
+            return dstData
+        }
+    }
+}
+
+actor OpenAISocket {
+    private let task: URLSessionWebSocketTask
+    private let session: URLSession
+    private let continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
+    private var receiveTask: Task<Void, Never>?
+
+    private init(task: URLSessionWebSocketTask, session: URLSession, continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?) {
+        self.task = task
+        self.session = session
+        self.continuation = continuation
+    }
+
+    static func connect(
+        apiKey: String,
+        localeIdentifier: String?,
+        continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
+    ) async throws -> OpenAISocket {
+        guard let url = URL(string: "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview") else {
+            throw DictationError.invalidServerResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("realtime=v1", forHTTPHeaderField: "OpenAI-Beta")
+
+        let session = URLSession(configuration: .ephemeral)
+        let task = session.webSocketTask(with: request)
+        let socket = OpenAISocket(task: task, session: session, continuation: continuation)
+        task.resume()
+
+        // Configure session with realtime transcription and server VAD
+        var transcriptionConfig: [String: Any] = [
+            "model": "whisper-1"
+        ]
+        if let localeIdentifier, localeIdentifier != "auto" {
+            transcriptionConfig["language"] = localeIdentifier
+        }
+
+        let sessionUpdate: [String: Any] = [
+            "type": "session.update",
+            "session": [
+                "modalities": ["text"],
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "input_audio_transcription": transcriptionConfig,
+                "turn_detection": [
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500
+                ]
+            ]
+        ]
+
+        try await socket.sendJSON(sessionUpdate)
+
+        // Await confirmation or session.created/updated
+        let first = try await withThrowingTaskGroup(of: URLSessionWebSocketTask.Message.self) { group in
+            group.addTask { try await task.receive() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(8))
+                throw DictationError.timedOut
+            }
+            guard let result = try await group.next() else { throw DictationError.timedOut }
+            group.cancelAll()
+            return result
+        }
+
+        let object = try decode(first)
+        if let error = serverError(object) {
+            throw NSError(domain: "OpenAI", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
+        }
+
+        await socket.startReceiving()
+        return socket
+    }
+
+    func sendAudio(_ data: Data) async {
+        guard !data.isEmpty else { return }
+        try? await sendJSON([
+            "type": "input_audio_buffer.append",
+            "audio": data.base64EncodedString()
+        ])
+    }
+
+    func finishAudio() async {
+        try? await sendJSON(["type": "input_audio_buffer.commit"])
+    }
+
+    func close() {
+        receiveTask?.cancel()
+        task.cancel(with: .goingAway, reason: nil)
+        session.invalidateAndCancel()
+    }
+
+    private func startReceiving() {
+        receiveTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                while !Task.isCancelled {
+                    let message = try await task.receive()
+                    let root = try Self.decode(message)
+
+                    if let error = Self.serverError(root) {
+                        continuation?.finish(throwing: NSError(domain: "OpenAI", code: 2, userInfo: [NSLocalizedDescriptionKey: error]))
+                        return
+                    }
+
+                    guard let type = root["type"] as? String else { continue }
+
+                    switch type {
+                    case "conversation.item.input_audio_transcription.delta":
+                        if let delta = root["delta"] as? String {
+                            continuation?.yield(.interim(delta))
+                        }
+                    case "conversation.item.input_audio_transcription.completed":
+                        if let transcript = root["transcript"] as? String {
+                            continuation?.yield(.final(transcript))
+                        }
+                    case "response.audio_transcript.delta":
+                        if let delta = root["delta"] as? String {
+                            continuation?.yield(.interim(delta))
+                        }
+                    case "response.audio_transcript.done":
+                        if let transcript = root["transcript"] as? String {
+                            continuation?.yield(.final(transcript))
+                        }
+                    default:
+                        break
+                    }
+                }
+            } catch {
+                if !Task.isCancelled {
+                    continuation?.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func sendJSON(_ object: [String: Any]) async throws {
+        let data = try JSONSerialization.data(withJSONObject: object)
+        try await task.send(.string(String(decoding: data, as: UTF8.self)))
+    }
+
+    private static func decode(_ message: URLSessionWebSocketTask.Message) throws -> [String: Any] {
+        let data: Data
+        switch message {
+        case .data(let value): data = value
+        case .string(let value): data = Data(value.utf8)
+        @unknown default: throw DictationError.invalidServerResponse
+        }
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw DictationError.invalidServerResponse
+        }
+        return object
+    }
+
+    private static func serverError(_ object: [String: Any]) -> String? {
+        if let error = object["error"] as? [String: Any] {
+            return error["message"] as? String
+        }
+        return nil
+    }
+}

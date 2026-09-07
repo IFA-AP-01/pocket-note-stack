@@ -3,6 +3,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let pocketStackOpenSettings = Notification.Name("PocketStackOpenSettings")
+    static let pocketStackVoiceNoteWarning = Notification.Name("PocketStackVoiceNoteWarning")
 }
 
 @MainActor

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ScreenCaptureKit
+import Speech
 
 @MainActor
 final class DictationCoordinator: ObservableObject {
@@ -12,6 +13,43 @@ final class DictationCoordinator: ObservableObject {
     private var silenceTask: Task<Void, Never>?
 
     init(preferences: AppPreferences) { self.preferences = preferences }
+
+    func checkProviderReadiness() async -> (isReady: Bool, reason: String) {
+        if preferences.audioSource != .microphone, !CGPreflightScreenCaptureAccess() {
+            return (false, "Screen recording permission is required for system audio capture.")
+        }
+
+        switch preferences.speechProvider {
+        case .appleOnDevice:
+            if #available(macOS 26.0, *) {
+                let localeID = (preferences.speechLocale.isEmpty || preferences.speechLocale == "auto") ? Locale.current.identifier : preferences.speechLocale
+                let locale = Locale(identifier: localeID)
+                guard let supported = await DictationTranscriber.supportedLocale(equivalentTo: locale) else {
+                    return (false, "The selected speaker language is not supported by Apple On-Device speech recognition.")
+                }
+                let transcriber = DictationTranscriber(locale: supported, preset: .progressiveLongDictation)
+                let status = await AssetInventory.status(forModules: [transcriber])
+                if status != .installed {
+                    return (false, "Apple On-Device language model is not downloaded yet. Please download it in Settings.")
+                }
+                return (true, "")
+            } else {
+                return (false, "Apple On-Device speech recognition requires macOS 26 or later.")
+            }
+        case .geminiLive:
+            let key = (try? KeychainStore().string(for: "gemini-api-key"))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if key == nil || key?.isEmpty == true {
+                return (false, "Google Gemini API key is not configured. Please enter your API key in Settings.")
+            }
+            return (true, "")
+        case .openAI:
+            let key = (try? KeychainStore().string(for: "openai-api-key"))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if key == nil || key?.isEmpty == true {
+                return (false, "OpenAI API key is not configured. Please enter your API key in Settings.")
+            }
+            return (true, "")
+        }
+    }
 
     func beginPreparing() {
         isRecording = true
@@ -39,9 +77,14 @@ final class DictationCoordinator: ObservableObject {
         case .geminiLive:
             engine = GeminiLiveEngine()
         case .openAI:
-            throw DictationError.openAIUnavailable
+            engine = OpenAIRealtimeEngine()
         }
-        let locale = (preferences.speechProvider == .geminiLive || preferences.speechProvider == .openAI) && preferences.speechLocale == "auto" ? nil : preferences.speechLocale
+        let locale: String?
+        if preferences.speechProvider == .appleOnDevice {
+            locale = (preferences.speechLocale.isEmpty || preferences.speechLocale == "auto") ? Locale.current.identifier : preferences.speechLocale
+        } else {
+            locale = (preferences.speechLocale == "auto" || preferences.speechLocale.isEmpty) ? nil : preferences.speechLocale
+        }
         do {
             let session = try await engine.start(localeIdentifier: locale, deviceUID: preferences.microphoneUID, audioSource: preferences.audioSource)
             currentSession = session

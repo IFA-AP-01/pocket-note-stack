@@ -209,6 +209,14 @@ final class DeckController: NSObject {
     func toggleDictation(noteID: UUID) {
         Task {
             if viewState.dictationState == .idle {
+                let readiness = await dictation.checkProviderReadiness()
+                guard readiness.isReady else {
+                    UserDefaults.standard.set(SettingsSection.dictation.rawValue, forKey: "settings.selectedPane")
+                    NotificationCenter.default.post(name: .pocketStackOpenSettings, object: nil)
+                    NotificationCenter.default.post(name: .pocketStackVoiceNoteWarning, object: readiness.reason)
+                    return
+                }
+
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                     viewState.dictationState = .preparing
                     viewState.dictatingNoteID = noteID
