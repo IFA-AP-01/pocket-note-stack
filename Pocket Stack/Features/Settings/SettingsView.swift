@@ -16,7 +16,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .shortcuts: "Shortcuts"
-        case .dictation: "Dictation"
+        case .dictation: "Voice Note"
         case .sync: "Sync"
         case .about: "About"
         }
@@ -215,92 +215,186 @@ private struct ShortcutsSettingsView: View {
 @Observable
 private final class DictationSettingsModel {
     var devices: [AudioInputDevice] = []
-    var apiKey = ""
-    var status = ""
-    var isWorking = false
-    var isConfirmingKeyDeletion = false
+
+    // Gemini
+    var geminiApiKey = ""
+    var geminiStatus = ""
+    var isGeminiWorking = false
+    var isConfirmingGeminiKeyDeletion = false
+
+    // OpenAI
+    var openAIApiKey = ""
+    var openAIStatus = ""
+    var isOpenAIWorking = false
+    var isConfirmingOpenAIKeyDeletion = false
+
+    // Apple On-Device
+    var supportedAppleLocales: [Locale] = []
+    var appleModelStatus = ""
+    var isAppleWorking = false
+
     var screenCaptureGranted = CGPreflightScreenCaptureAccess()
 
     private let keychain = KeychainStore()
-    private var workTask: Task<Void, Never>?
+    private var geminiTask: Task<Void, Never>?
+    private var openAITask: Task<Void, Never>?
+    private var appleTask: Task<Void, Never>?
 
     func load(preferences: AppPreferences) async {
         devices = AudioDeviceManager.inputDevices()
-        apiKey = (try? keychain.string(for: "gemini-api-key")) ?? ""
+        geminiApiKey = (try? keychain.string(for: "gemini-api-key")) ?? ""
+        openAIApiKey = (try? keychain.string(for: "openai-api-key")) ?? ""
         normalizeLocale(for: preferences.speechProvider, preferences: preferences)
-        if #available(macOS 26.0, *), preferences.speechProvider == .appleOnDevice {
-            checkAppleModel(preferences: preferences, download: false)
+        if #available(macOS 26.0, *) {
+            let locales = await DictationTranscriber.supportedLocales
+            supportedAppleLocales = locales.sorted {
+                let name1 = Locale.current.localizedString(forIdentifier: $0.identifier) ?? $0.identifier
+                let name2 = Locale.current.localizedString(forIdentifier: $1.identifier) ?? $1.identifier
+                return name1.localizedCaseInsensitiveCompare(name2) == .orderedAscending
+            }
+            if preferences.speechProvider == .appleOnDevice {
+                checkAppleModel(preferences: preferences, download: false)
+            }
         }
         screenCaptureGranted = CGPreflightScreenCaptureAccess()
     }
 
     func providerChanged(_ provider: SpeechProvider, preferences: AppPreferences) {
         cancelWork()
-        status = ""
         normalizeLocale(for: provider, preferences: preferences)
-        if #available(macOS 26.0, *), provider == .appleOnDevice {
-            checkAppleModel(preferences: preferences, download: false)
+        if #available(macOS 26.0, *) {
+            if provider == .appleOnDevice {
+                checkAppleModel(preferences: preferences, download: false)
+            }
         }
         screenCaptureGranted = CGPreflightScreenCaptureAccess()
     }
 
-    func saveAPIKey() -> Bool {
-        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    // MARK: - Gemini API Key
+
+    func saveGeminiKey() -> Bool {
+        let trimmedKey = geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { return false }
         do {
             try keychain.set(trimmedKey, for: "gemini-api-key")
-            apiKey = trimmedKey
-            status = "Saved in Keychain"
+            geminiApiKey = trimmedKey
+            geminiStatus = "Saved in Keychain"
             return true
         } catch {
-            status = error.localizedDescription
+            geminiStatus = error.localizedDescription
             return false
         }
     }
 
-    func deleteAPIKey() {
+    func deleteGeminiKey() {
         do {
             try keychain.remove("gemini-api-key")
-            apiKey = ""
-            status = "Removed"
+            geminiApiKey = ""
+            geminiStatus = "Removed"
         } catch {
-            status = error.localizedDescription
+            geminiStatus = error.localizedDescription
         }
     }
 
     func testGeminiConnection() {
-        guard saveAPIKey() else { return }
-        cancelWork()
-        isWorking = true
-        status = "Connecting…"
-        workTask = Task { @MainActor [weak self] in
+        guard saveGeminiKey() else { return }
+        geminiTask?.cancel()
+        isGeminiWorking = true
+        geminiStatus = "Connecting…"
+        geminiTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { isWorking = false }
+            defer { isGeminiWorking = false }
             do {
                 try await GeminiLiveEngine().testConnection()
                 guard !Task.isCancelled else { return }
-                status = "Connected"
+                geminiStatus = "Connected"
             } catch is CancellationError {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
-                status = error.localizedDescription
+                geminiStatus = error.localizedDescription
             }
         }
     }
 
+    // MARK: - OpenAI API Key
+
+    func saveOpenAIKey() -> Bool {
+        let trimmedKey = openAIApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { return false }
+        do {
+            try keychain.set(trimmedKey, for: "openai-api-key")
+            openAIApiKey = trimmedKey
+            openAIStatus = "Saved in Keychain"
+            return true
+        } catch {
+            openAIStatus = error.localizedDescription
+            return false
+        }
+    }
+
+    func deleteOpenAIKey() {
+        do {
+            try keychain.remove("openai-api-key")
+            openAIApiKey = ""
+            openAIStatus = "Removed"
+        } catch {
+            openAIStatus = error.localizedDescription
+        }
+    }
+
+    func testOpenAIConnection() {
+        guard saveOpenAIKey() else { return }
+        openAITask?.cancel()
+        isOpenAIWorking = true
+        openAIStatus = "Connecting…"
+        openAITask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { isOpenAIWorking = false }
+            do {
+                guard let key = try keychain.string(for: "openai-api-key")?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+                    openAIStatus = "API key missing"
+                    return
+                }
+                guard let url = URL(string: "https://api.openai.com/v1/models") else { return }
+                var request = URLRequest(url: url)
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                request.timeoutInterval = 10
+                let (_, response) = try await URLSession.shared.data(for: request)
+                guard !Task.isCancelled else { return }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    openAIStatus = "Invalid response"
+                    return
+                }
+                if httpResponse.statusCode == 200 {
+                    openAIStatus = "Connected"
+                } else if httpResponse.statusCode == 401 {
+                    openAIStatus = "Invalid API key"
+                } else {
+                    openAIStatus = "HTTP \(httpResponse.statusCode)"
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                openAIStatus = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Apple On-Device
+
     @available(macOS 26.0, *)
     func checkAppleModel(preferences: AppPreferences, download: Bool) {
-        cancelWork()
-        isWorking = true
-        status = download ? "Preparing…" : "Checking…"
+        appleTask?.cancel()
+        isAppleWorking = true
         let localeIdentifier = preferences.speechLocale
-        workTask = Task { @MainActor [weak self] in
+        appleTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { isWorking = false }
+            defer { isAppleWorking = false }
             let requestedLocale = Locale(identifier: localeIdentifier)
             guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
-                status = "Unsupported"
+                appleModelStatus = "unsupported"
                 return
             }
             guard !Task.isCancelled else { return }
@@ -308,33 +402,51 @@ private final class DictationSettingsModel {
             do {
                 if download,
                    let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-                    status = "Downloading…"
+                    appleModelStatus = "downloading"
                     try await request.downloadAndInstall()
                 }
                 guard !Task.isCancelled else { return }
-                status = String(describing: await AssetInventory.status(forModules: [transcriber])).capitalized
+                let status = await AssetInventory.status(forModules: [transcriber])
+                switch status {
+                case .installed:
+                    appleModelStatus = "installed"
+                case .supported:
+                    appleModelStatus = "supported"
+                case .downloading:
+                    appleModelStatus = "downloading"
+                case .unsupported:
+                    appleModelStatus = "unsupported"
+                @unknown default:
+                    appleModelStatus = "unknown"
+                }
             } catch is CancellationError {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
-                status = error.localizedDescription
+                appleModelStatus = ""
             }
         }
     }
 
     func cancelWork() {
-        workTask?.cancel()
-        workTask = nil
-        isWorking = false
+        geminiTask?.cancel()
+        geminiTask = nil
+        openAITask?.cancel()
+        openAITask = nil
+        appleTask?.cancel()
+        appleTask = nil
+        isGeminiWorking = false
+        isOpenAIWorking = false
+        isAppleWorking = false
     }
 
     private func normalizeLocale(for provider: SpeechProvider, preferences: AppPreferences) {
         switch provider {
         case .appleOnDevice:
-            if preferences.speechLocale == "auto" {
+            if preferences.speechLocale == "auto" || preferences.speechLocale.isEmpty {
                 preferences.speechLocale = Locale.current.identifier
             }
-        case .geminiLive:
+        case .geminiLive, .openAI:
             let locale = preferences.speechLocale.lowercased()
             if locale.hasPrefix("vi") {
                 preferences.speechLocale = "vi-VN"
@@ -355,11 +467,16 @@ private struct DictationSettingsView: View {
         @Bindable var model = model
 
         Form {
-            Section("Input") {
-                Picker("Provider", selection: $preferences.speechProvider) {
-                    ForEach(availableSpeechProviders) { provider in
-                        Text(provider.title).tag(provider)
+            // MARK: - Section 1: Input Method (Top)
+            Section("Input Method") {
+                Picker("Capture", selection: $preferences.audioSource) {
+                    ForEach(AudioSource.allCases) { source in
+                        Text(source.title).tag(source)
                     }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: preferences.audioSource) { _, _ in
+                    model.screenCaptureGranted = CGPreflightScreenCaptureAccess()
                 }
 
                 Picker("Microphone", selection: Binding(
@@ -370,18 +487,6 @@ private struct DictationSettingsView: View {
                     ForEach(model.devices) { device in
                         Text(device.name).tag(device.uid)
                     }
-                }
-            }
-
-            Section("Audio Source") {
-                Picker("Capture", selection: $preferences.audioSource) {
-                    ForEach(AudioSource.allCases) { source in
-                        Text(source.title).tag(source)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: preferences.audioSource) { _, _ in
-                    model.screenCaptureGranted = CGPreflightScreenCaptureAccess()
                 }
 
                 if preferences.audioSource != .microphone {
@@ -404,47 +509,28 @@ private struct DictationSettingsView: View {
                 }
             }
 
-            if preferences.speechProvider == .appleOnDevice {
-                appleSettings(model: model)
-            } else {
-                Section("Gemini Live") {
+            // MARK: - Section 2: Provider
+            Section("Provider") {
+                Picker("Provider", selection: $preferences.speechProvider) {
+                    ForEach(availableSpeechProviders) { provider in
+                        Text(provider.title).tag(provider)
+                    }
+                }
+
+                if preferences.speechProvider == .appleOnDevice {
+                    appleSettings(model: model)
+                }
+
+                if preferences.speechProvider == .geminiLive {
                     Picker("Language", selection: $preferences.speechLocale) {
                         Text("Auto detect").tag("auto")
                         Text("English").tag("en-US")
                         Text("Vietnamese").tag("vi-VN")
                     }
-
-                    SecureField("API key", text: $model.apiKey)
-
-                    HStack {
-                        Button("Save") {
-                            _ = model.saveAPIKey()
-                        }
-                        .disabled(model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                        Button("Delete", role: .destructive) {
-                            model.isConfirmingKeyDeletion = true
-                        }
-                        .disabled(model.apiKey.isEmpty)
-
-                        Button("Test Connection") {
-                            model.testGeminiConnection()
-                        }
-                        .disabled(model.isWorking || model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                        Spacer()
-                        if model.isWorking {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Text(model.status)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text("Microphone audio is streamed to Google only while Gemini Live is selected and dictation is active.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
+
+                openAIConfigCard(model: model)
+                geminiConfigCard(model: model)
             }
         }
         .formStyle(.grouped)
@@ -459,11 +545,21 @@ private struct DictationSettingsView: View {
         }
         .confirmationDialog(
             "Delete the saved Gemini API key?",
-            isPresented: $model.isConfirmingKeyDeletion,
+            isPresented: $model.isConfirmingGeminiKeyDeletion,
             titleVisibility: .visible
         ) {
             Button("Delete API Key", role: .destructive) {
-                model.deleteAPIKey()
+                model.deleteGeminiKey()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Delete the saved OpenAI API key?",
+            isPresented: $model.isConfirmingOpenAIKeyDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("Delete API Key", role: .destructive) {
+                model.deleteOpenAIKey()
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -472,30 +568,191 @@ private struct DictationSettingsView: View {
     @ViewBuilder
     private func appleSettings(model: DictationSettingsModel) -> some View {
         if #available(macOS 26.0, *) {
-            Section("Apple On-Device") {
-                TextField("Language / locale", text: $preferences.speechLocale)
+            Picker("Language / locale", selection: $preferences.speechLocale) {
+                if model.supportedAppleLocales.isEmpty {
+                    Text(preferences.speechLocale).tag(preferences.speechLocale)
+                } else {
+                    ForEach(model.supportedAppleLocales, id: \.identifier) { loc in
+                        let name = Locale.current.localizedString(forIdentifier: loc.identifier) ?? loc.identifier
+                        Text("\(name) (\(loc.identifier))").tag(loc.identifier)
+                    }
+                }
+            }
+            .onChange(of: preferences.speechLocale) { _, _ in
+                model.checkAppleModel(preferences: preferences, download: false)
+            }
 
-                LabeledContent("Language model") {
-                    HStack {
-                        if model.isWorking {
+            LabeledContent("Language model") {
+                HStack(spacing: 8) {
+                    if model.isAppleWorking {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(model.appleModelStatus == "downloading" ? "Downloading…" : "Checking…")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        switch model.appleModelStatus {
+                        case "installed":
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Installed")
+                                    .foregroundStyle(.secondary)
+                            }
+                        case "supported":
+                            Button("Download") {
+                                model.checkAppleModel(preferences: preferences, download: true)
+                            }
+                        case "downloading":
                             ProgressView()
                                 .controlSize(.small)
+                            Text("Downloading…")
+                                .foregroundStyle(.secondary)
+                        case "unsupported":
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.yellow)
+                                Text("Unsupported")
+                                    .foregroundStyle(.secondary)
+                            }
+                        default:
+                            EmptyView()
                         }
-                        Text(model.status)
-                            .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Button("Check Status") {
-                        model.checkAppleModel(preferences: preferences, download: false)
-                    }
-                    .disabled(model.isWorking)
-                    Button("Download") {
-                        model.checkAppleModel(preferences: preferences, download: true)
-                    }
-                    .disabled(model.isWorking)
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func openAIConfigCard(model: DictationSettingsModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image("openai")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("OpenAI")
+                        .font(.body.weight(.medium))
+                    Text("OpenAI")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if !model.openAIApiKey.isEmpty {
+                    Label("Configured", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+            }
+            .padding(.vertical, 2)
+
+            SecureField("OpenAI API key", text: Bindable(model).openAIApiKey, prompt: Text("sk-..."))
+
+            HStack {
+                Button("Save") {
+                    _ = model.saveOpenAIKey()
+                }
+                .disabled(model.openAIApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button("Delete", role: .destructive) {
+                    model.isConfirmingOpenAIKeyDeletion = true
+                }
+                .disabled(model.openAIApiKey.isEmpty)
+
+                Button("Test Connection") {
+                    model.testOpenAIConnection()
+                }
+                .disabled(model.isOpenAIWorking || model.openAIApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Spacer()
+
+                if model.isOpenAIWorking {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(model.openAIStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func geminiConfigCard(model: DictationSettingsModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image("gemini")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Gemini")
+                        .font(.body.weight(.medium))
+                    Text("Google")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if !model.geminiApiKey.isEmpty {
+                    Label("Configured", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+            }
+            .padding(.vertical, 2)
+
+            SecureField("Gemini API key", text: Bindable(model).geminiApiKey, prompt: Text("AIzaSy..."))
+
+            HStack {
+                Button("Save") {
+                    _ = model.saveGeminiKey()
+                }
+                .disabled(model.geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button("Delete", role: .destructive) {
+                    model.isConfirmingGeminiKeyDeletion = true
+                }
+                .disabled(model.geminiApiKey.isEmpty)
+
+                Button("Test Connection") {
+                    model.testGeminiConnection()
+                }
+                .disabled(model.isGeminiWorking || model.geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Spacer()
+
+                if model.isGeminiWorking {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(model.geminiStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Microphone audio is streamed to Google only while Gemini is selected and dictation is active.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 
     private func openScreenCaptureSettings() {
@@ -507,7 +764,7 @@ private struct DictationSettingsView: View {
         if #available(macOS 26.0, *) {
             SpeechProvider.allCases
         } else {
-            [.geminiLive]
+            [.geminiLive, .openAI]
         }
     }
 }

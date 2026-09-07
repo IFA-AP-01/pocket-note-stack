@@ -38,8 +38,10 @@ final class DictationCoordinator: ObservableObject {
             engine = AppleDictationEngine()
         case .geminiLive:
             engine = GeminiLiveEngine()
+        case .openAI:
+            throw DictationError.openAIUnavailable
         }
-        let locale = preferences.speechProvider == .geminiLive && preferences.speechLocale == "auto" ? nil : preferences.speechLocale
+        let locale = (preferences.speechProvider == .geminiLive || preferences.speechProvider == .openAI) && preferences.speechLocale == "auto" ? nil : preferences.speechLocale
         do {
             let session = try await engine.start(localeIdentifier: locale, deviceUID: preferences.microphoneUID, audioSource: preferences.audioSource)
             currentSession = session

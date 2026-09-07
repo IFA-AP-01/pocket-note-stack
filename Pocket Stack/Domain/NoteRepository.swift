@@ -11,12 +11,14 @@ protocol NoteRepository: Sendable {
 enum SpeechProvider: String, CaseIterable, Identifiable, Codable, Sendable {
     case appleOnDevice
     case geminiLive
+    case openAI
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .appleOnDevice: "Apple On-Device"
-        case .geminiLive: "Google Gemini Live"
+        case .geminiLive: "Google Gemini"
+        case .openAI: "OpenAI"
         }
     }
 }
