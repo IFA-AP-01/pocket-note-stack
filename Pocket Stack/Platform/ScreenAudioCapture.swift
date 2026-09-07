@@ -40,9 +40,9 @@ final class ScreenAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         configuration.excludesCurrentProcessAudio = true
         configuration.sampleRate = 48_000
         configuration.channelCount = 2
-        configuration.width = 16
-        configuration.height = 16
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 2)
+        configuration.width = 4
+        configuration.height = 4
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue)

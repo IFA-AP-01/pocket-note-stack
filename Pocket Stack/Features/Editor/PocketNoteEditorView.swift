@@ -199,6 +199,7 @@ private struct PocketNativeEditorRepresentable: NSViewRepresentable {
 final class PocketTextView: NSTextView {
     fileprivate weak var editorCoordinator: PocketNativeEditorRepresentable.Coordinator?
     var onExit: (() -> Void)?
+    var hasUserPlacedCursor = false
 
     private var currentPalette: NotePaletteColor?
     private var currentFontSize: CGFloat = 15
@@ -286,6 +287,7 @@ final class PocketTextView: NSTextView {
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
         if ok {
+            hasUserPlacedCursor = true
             EditorBridge.setLastActive(self)
             window?.invalidateCursorRects(for: self)
             let mouseLoc = window?.mouseLocationOutsideOfEventStream ?? .zero
@@ -295,6 +297,11 @@ final class PocketTextView: NSTextView {
             }
         }
         return ok
+    }
+
+    override func keyDown(with event: NSEvent) {
+        hasUserPlacedCursor = true
+        super.keyDown(with: event)
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -611,6 +618,7 @@ final class PocketTextView: NSTextView {
     // MARK: - 100% Reliable Checkbox Click Interaction
 
     override func mouseDown(with event: NSEvent) {
+        hasUserPlacedCursor = true
         if window?.isKeyWindow == false {
             window?.makeKey()
         }
@@ -1163,6 +1171,7 @@ final class PocketTextView: NSTextView {
     // MARK: - Load & Serialize (Full Rich Text Preservation via Standard Markdown)
 
     func loadContent(_ raw: String) {
+        hasUserPlacedCursor = false
         let containerWidth = effectiveContentWidth
         let attrString = NSMutableAttributedString()
         let pStyle = NSMutableParagraphStyle()
@@ -1247,6 +1256,7 @@ final class PocketTextView: NSTextView {
         textStorage?.setAttributedString(attrString)
         let newLength = (string as NSString).length
         setSelectedRange(NSRange(location: min(savedSelected.location, newLength), length: 0))
+        hasUserPlacedCursor = false
     }
 
     private func parseInlineMarkdown(_ text: String, role: String, maxWidth: CGFloat) -> NSAttributedString {

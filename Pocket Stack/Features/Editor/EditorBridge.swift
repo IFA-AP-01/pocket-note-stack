@@ -94,26 +94,47 @@ final class EditorBridge {
     func beginDictation() {
         guard let textView = currentTextView(), !isDictating else { return }
         isDictating = true
-        anchorRange = textView.selectedRange()
+        textView.undoManager?.beginUndoGrouping()
+        textView.undoManager?.setActionName("Voice Dictation")
+
+        if !textView.hasUserPlacedCursor {
+            let totalLength = (textView.string as NSString).length
+            if totalLength > 0 {
+                if !textView.string.hasSuffix("\n") {
+                    textView.textStorage?.replaceCharacters(in: NSRange(location: totalLength, length: 0), with: "\n")
+                    textView.didChangeText()
+                    anchorRange = NSRange(location: totalLength + 1, length: 0)
+                } else {
+                    anchorRange = NSRange(location: totalLength, length: 0)
+                }
+            } else {
+                anchorRange = NSRange(location: 0, length: 0)
+            }
+            textView.setSelectedRange(anchorRange)
+            textView.scrollRangeToVisible(anchorRange)
+            textView.hasUserPlacedCursor = true
+        } else {
+            anchorRange = textView.selectedRange()
+        }
+
         provisionalRange = nil
         committedLength = 0
         textView.isEditable = false
         textView.showDictationCaret(at: anchorRange.location)
         textView.window?.invalidateCursorRects(for: textView)
         NSCursor.operationNotAllowed.set()
-        textView.undoManager?.beginUndoGrouping()
-        textView.undoManager?.setActionName("Voice Dictation")
     }
 
     func applyInterim(_ text: String) {
         guard let textView = currentTextView(), isDictating else { return }
-        let range = provisionalRange ?? NSRange(location: anchorRange.location + committedLength, length: anchorRange.length)
+        let range = provisionalRange ?? NSRange(location: anchorRange.location + committedLength, length: committedLength == 0 ? anchorRange.length : 0)
         textView.textStorage?.replaceCharacters(in: range, with: text)
         let newLen = (text as NSString).length
         provisionalRange = NSRange(location: range.location, length: newLen)
         let targetLocation = range.location + newLen
         textView.setSelectedRange(NSRange(location: targetLocation, length: 0))
         textView.showDictationCaret(at: targetLocation)
+        textView.scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
     }
 
     func commitFinal(_ text: String) {
@@ -128,6 +149,43 @@ final class EditorBridge {
         let targetLocation = anchorRange.location + committedLength
         textView.setSelectedRange(NSRange(location: targetLocation, length: 0))
         textView.showDictationCaret(at: targetLocation)
+        textView.scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+    }
+
+    func insertDictationNewline() {
+        guard let textView = currentTextView(), isDictating else { return }
+
+        // Never insert a newline while there is pending unfinalized interim text
+        guard provisionalRange == nil else { return }
+
+        guard committedLength > 0 else { return }
+
+        let insertPos = anchorRange.location + committedLength
+        guard let storage = textView.textStorage, insertPos <= storage.length else { return }
+
+        // Avoid duplicate newline if already ending in \n
+        if insertPos > 0 {
+            let lastCharRange = NSRange(location: insertPos - 1, length: 1)
+            let lastChar = (storage.string as NSString).substring(with: lastCharRange)
+            if lastChar == "\n" {
+                return
+            } else if lastChar == " " {
+                storage.replaceCharacters(in: lastCharRange, with: "\n")
+                textView.didChangeText()
+                textView.setSelectedRange(NSRange(location: insertPos, length: 0))
+                textView.showDictationCaret(at: insertPos)
+                textView.scrollRangeToVisible(NSRange(location: insertPos, length: 0))
+                return
+            }
+        }
+
+        storage.replaceCharacters(in: NSRange(location: insertPos, length: 0), with: "\n")
+        committedLength += 1
+        textView.didChangeText()
+        let newPos = anchorRange.location + committedLength
+        textView.setSelectedRange(NSRange(location: newPos, length: 0))
+        textView.showDictationCaret(at: newPos)
+        textView.scrollRangeToVisible(NSRange(location: newPos, length: 0))
     }
 
     func finishDictation(discardInterim: Bool) {
@@ -138,6 +196,7 @@ final class EditorBridge {
         provisionalRange = nil
         isDictating = false
         textView.isEditable = true
+        textView.hasUserPlacedCursor = true
         textView.hideDictationCaret()
         textView.window?.invalidateCursorRects(for: textView)
         NSCursor.iBeam.set()

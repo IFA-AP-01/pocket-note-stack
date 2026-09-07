@@ -9,6 +9,7 @@ final class DictationCoordinator: ObservableObject {
     private var currentSession: (any DictationSession)?
     private var eventTask: Task<Void, Never>?
     private var levelTask: Task<Void, Never>?
+    private var silenceTask: Task<Void, Never>?
 
     init(preferences: AppPreferences) { self.preferences = preferences }
 
@@ -58,19 +59,33 @@ final class DictationCoordinator: ObservableObject {
             eventTask = Task { [weak self] in
                 do {
                     for try await event in session.events {
+                        guard let self else { return }
                         switch event {
-                        case .interim(let text): bridge.applyInterim(text)
-                        case .final(let text): bridge.commitFinal(text)
+                        case .interim(let text):
+                            bridge.applyInterim(text)
+                            self.silenceTask?.cancel()
+                            self.silenceTask = nil
+                        case .final(let text):
+                            bridge.commitFinal(text)
+                            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                self.resetSilenceTimer(bridge: bridge)
+                            }
                         }
                     }
+                    self?.silenceTask?.cancel()
+                    self?.silenceTask = nil
                     bridge.finishDictation(discardInterim: true)
                     state(.idle)
                 } catch {
+                    self?.silenceTask?.cancel()
+                    self?.silenceTask = nil
                     bridge.finishDictation(discardInterim: true)
                     state(.failed(error.localizedDescription))
                     try? await Task.sleep(for: .seconds(3))
                     state(.idle)
                 }
+                self?.silenceTask?.cancel()
+                self?.silenceTask = nil
                 self?.levelTask?.cancel()
                 self?.levelTask = nil
                 onAudioLevel?(0.0)
@@ -84,8 +99,20 @@ final class DictationCoordinator: ObservableObject {
         }
     }
 
+    private func resetSilenceTimer(bridge: EditorBridge) {
+        silenceTask?.cancel()
+        silenceTask = Task { [weak self, weak bridge] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            guard let self, self.isRecording else { return }
+            bridge?.insertDictationNewline()
+        }
+    }
+
     func stop() async {
         isRecording = false
+        silenceTask?.cancel()
+        silenceTask = nil
         levelTask?.cancel()
         levelTask = nil
         guard let currentSession else { return }
@@ -94,6 +121,8 @@ final class DictationCoordinator: ObservableObject {
 
     func cancel() async {
         isRecording = false
+        silenceTask?.cancel()
+        silenceTask = nil
         levelTask?.cancel()
         levelTask = nil
         await currentSession?.cancel()

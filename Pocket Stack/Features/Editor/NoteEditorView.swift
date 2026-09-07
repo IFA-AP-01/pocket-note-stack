@@ -444,7 +444,9 @@ struct NoteEditorView: View {
             usesCustomTitle = note?.customTitle != nil
         }
         .onChange(of: titleFocused) { _, focused in
-            if !focused {
+            if focused {
+                bridge.activeTextView?.hasUserPlacedCursor = false
+            } else {
                 saveContent()
             }
         }
