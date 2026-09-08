@@ -130,10 +130,22 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
             analyzer: analyzer
         )
         session.resultTask = Task {
+            var pendingVolatileRange: CMTimeRange?
             do {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters)
-                    eventContinuation.yield(result.isFinal ? .final(text) : .interim(text))
+                    if let pendingVolatileRange,
+                       Self.isLaterPassage(result.range, than: pendingVolatileRange) {
+                        eventContinuation.yield(.promoteInterim)
+                    }
+
+                    if result.isFinal {
+                        eventContinuation.yield(.final(text))
+                        pendingVolatileRange = nil
+                    } else {
+                        eventContinuation.yield(.interim(text))
+                        pendingVolatileRange = result.range
+                    }
                 }
                 eventContinuation.finish()
             } catch {
@@ -150,6 +162,10 @@ final class AppleDictationSession: DictationSession, @unchecked Sendable {
             }
         }
         return session
+    }
+
+    private static func isLaterPassage(_ candidate: CMTimeRange, than pending: CMTimeRange) -> Bool {
+        CMTimeCompare(candidate.start, pending.end) >= 0
     }
 
     private static func calculateRMS(buffer: AVAudioPCMBuffer) -> Float {

@@ -16,6 +16,7 @@ final class NoteWindowCoordinator: NSObject {
     private let dictation: DictationCoordinator
     @ObservationIgnored private var windows: [UUID: NoteWindowController] = [:]
     @ObservationIgnored private var noteObserver: NSObjectProtocol?
+    @ObservationIgnored private var dictationStartTask: Task<Void, Never>?
     @ObservationIgnored weak var deckCoordinator: DeckCoordinator?
 
     private(set) var openNoteIDs: Set<UUID> = []
@@ -113,6 +114,7 @@ final class NoteWindowCoordinator: NSObject {
 
     func stopDictation() {
         guard dictatingNoteID != nil else { return }
+        dictationStartTask?.cancel()
         Task { await finishDictation() }
     }
 
@@ -147,8 +149,9 @@ final class NoteWindowCoordinator: NSObject {
         dictationState = .preparing
         audioLevel = 0
         refreshWindows()
-        Task {
+        dictationStartTask = Task {
             let readiness = await dictation.checkProviderReadiness()
+            guard !Task.isCancelled else { return }
             guard readiness.isReady else {
                 dictatingNoteID = nil
                 dictationState = .idle
@@ -179,6 +182,13 @@ final class NoteWindowCoordinator: NSObject {
                     }
                     self?.refreshWindows()
                 }
+            } catch is CancellationError {
+                guard dictatingNoteID == noteID else { return }
+                bridge.finishDictation(discardInterim: false)
+                dictationState = .idle
+                dictatingNoteID = nil
+                audioLevel = 0
+                refreshWindows()
             } catch {
                 bridge.finishDictation(discardInterim: true)
                 dictationState = .failed(error.localizedDescription)
@@ -196,10 +206,11 @@ final class NoteWindowCoordinator: NSObject {
     private func finishDictation() async {
         guard let noteID = dictatingNoteID else { return }
         dictationState = .finalizing
+        audioLevel = 0
+        windows[noteID]?.bridge.finishDictation(discardInterim: false)
         refreshWindows()
         await dictation.stop()
         guard dictatingNoteID == noteID else { return }
-        windows[noteID]?.bridge.finishDictation(discardInterim: true)
         dictationState = .idle
         dictatingNoteID = nil
         audioLevel = 0

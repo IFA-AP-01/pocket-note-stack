@@ -137,8 +137,32 @@ final class EditorBridge {
         textView.scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
     }
 
+    func promoteInterim() {
+        guard let textView = currentTextView(), isDictating, let provisionalRange else { return }
+
+        var separatorLength = 0
+        if provisionalRange.length > 0,
+           let storage = textView.textStorage {
+            let lastCharacterRange = NSRange(location: NSMaxRange(provisionalRange) - 1, length: 1)
+            let lastCharacter = (storage.string as NSString).substring(with: lastCharacterRange)
+            if lastCharacter.rangeOfCharacter(from: .whitespacesAndNewlines) == nil {
+                storage.replaceCharacters(in: NSRange(location: NSMaxRange(provisionalRange), length: 0), with: " ")
+                separatorLength = 1
+            }
+        }
+
+        committedLength += provisionalRange.length + separatorLength
+        self.provisionalRange = nil
+        textView.didChangeText()
+        let targetLocation = anchorRange.location + committedLength
+        textView.setSelectedRange(NSRange(location: targetLocation, length: 0))
+        textView.showDictationCaret(at: targetLocation)
+        textView.scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+    }
+
     func commitFinal(_ text: String) {
-        guard let textView = currentTextView(), isDictating else { return }
+        guard let textView = currentTextView(), isDictating,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let range = provisionalRange ?? NSRange(location: anchorRange.location + committedLength, length: committedLength == 0 ? anchorRange.length : 0)
         let suffix = text.isEmpty || text.hasSuffix(" ") || text.hasSuffix("\n") ? "" : " "
         let replacement = text + suffix

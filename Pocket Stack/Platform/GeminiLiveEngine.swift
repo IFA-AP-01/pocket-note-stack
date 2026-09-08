@@ -61,8 +61,7 @@ final class GeminiDictationSession: DictationSession, @unchecked Sendable {
         guard lock.withLock({ if stopped { return false }; stopped = true; return true }) else { return }
         limitTask?.cancel()
         await capture.stop()
-        await socket.finishAudio()
-        try? await Task.sleep(for: .seconds(2))
+        await socket.finishAudioAndWaitForFinal()
         await socket.close()
         continuation.finish()
     }
@@ -80,6 +79,8 @@ actor GeminiSocket {
     private let session: URLSession
     private let continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
     private var receiveTask: Task<Void, Never>?
+    private var hasPendingInterim = false
+    private var finalizationWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     private init(task: URLSessionWebSocketTask, session: URLSession, continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?) {
         self.task = task
@@ -134,11 +135,26 @@ actor GeminiSocket {
         ])
     }
 
-    func finishAudio() async {
+    func finishAudioAndWaitForFinal() async {
         try? await sendJSON(["realtimeInput": ["audioStreamEnd": true]])
+        guard hasPendingInterim else { return }
+
+        let waiterID = UUID()
+        await withCheckedContinuation { continuation in
+            guard hasPendingInterim else {
+                continuation.resume()
+                return
+            }
+            finalizationWaiters[waiterID] = continuation
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                self.resumeFinalizationWaiter(waiterID)
+            }
+        }
     }
 
     func close() {
+        resumeAllFinalizationWaiters()
         receiveTask?.cancel()
         task.cancel(with: .goingAway, reason: nil)
         session.invalidateAndCancel()
@@ -152,20 +168,47 @@ actor GeminiSocket {
                     let message = try await task.receive()
                     let root = try Self.decode(message)
                     if let error = Self.serverError(root) {
+                        await self.resumeAllFinalizationWaiters()
                         continuation?.finish(throwing: NSError(domain: "Gemini", code: 2, userInfo: [NSLocalizedDescriptionKey: error]))
                         return
                     }
                     guard let content = root["serverContent"] as? [String: Any] else { continue }
                     if let interim = content["interimInputTranscription"] as? [String: Any], let text = interim["text"] as? String {
+                        await self.noteInterim(text)
                         continuation?.yield(.interim(text))
                     }
                     if let final = content["inputTranscription"] as? [String: Any], let text = final["text"] as? String {
+                        await self.noteFinal()
                         continuation?.yield(.final(text))
                     }
                 }
             } catch {
+                await self.resumeAllFinalizationWaiters()
                 if !Task.isCancelled { continuation?.finish(throwing: error) }
             }
+        }
+    }
+
+    private func noteInterim(_ text: String) {
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            hasPendingInterim = true
+        }
+    }
+
+    private func noteFinal() {
+        hasPendingInterim = false
+        resumeAllFinalizationWaiters()
+    }
+
+    private func resumeFinalizationWaiter(_ id: UUID) {
+        finalizationWaiters.removeValue(forKey: id)?.resume()
+    }
+
+    private func resumeAllFinalizationWaiters() {
+        let waiters = finalizationWaiters.values
+        finalizationWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
         }
     }
 

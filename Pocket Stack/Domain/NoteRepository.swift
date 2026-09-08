@@ -41,6 +41,7 @@ enum AudioSource: String, CaseIterable, Codable, Identifiable {
 
 enum TranscriptEvent: Equatable, Sendable {
     case interim(String)
+    case promoteInterim
     case final(String)
 }
 

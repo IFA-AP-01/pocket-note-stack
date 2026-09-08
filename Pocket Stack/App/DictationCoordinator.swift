@@ -87,6 +87,10 @@ final class DictationCoordinator: ObservableObject {
         }
         do {
             let session = try await engine.start(localeIdentifier: locale, deviceUID: preferences.microphoneUID, audioSource: preferences.audioSource)
+            guard !Task.isCancelled else {
+                await session.cancel()
+                throw CancellationError()
+            }
             currentSession = session
             isRecording = true
             bridge.beginDictation()
@@ -110,6 +114,8 @@ final class DictationCoordinator: ObservableObject {
                             bridge.applyInterim(text)
                             self.silenceTask?.cancel()
                             self.silenceTask = nil
+                        case .promoteInterim:
+                            bridge.promoteInterim()
                         case .final(let text):
                             bridge.commitFinal(text)
                             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -119,12 +125,12 @@ final class DictationCoordinator: ObservableObject {
                     }
                     self?.silenceTask?.cancel()
                     self?.silenceTask = nil
-                    bridge.finishDictation(discardInterim: true)
+                    bridge.finishDictation(discardInterim: false)
                     state(.idle)
                 } catch {
                     self?.silenceTask?.cancel()
                     self?.silenceTask = nil
-                    bridge.finishDictation(discardInterim: true)
+                    bridge.finishDictation(discardInterim: false)
                     state(.failed(error.localizedDescription))
                     try? await Task.sleep(for: .seconds(3))
                     state(.idle)

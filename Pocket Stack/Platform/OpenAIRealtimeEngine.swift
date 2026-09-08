@@ -76,8 +76,7 @@ final class OpenAIDictationSession: DictationSession, @unchecked Sendable {
         guard lock.withLock({ if stopped { return false }; stopped = true; return true }) else { return }
         limitTask?.cancel()
         await capture.stop()
-        await socket.finishAudio()
-        try? await Task.sleep(for: .seconds(2))
+        await socket.finishAudioAndWaitForFinal()
         await socket.close()
         continuation.finish()
     }
@@ -131,6 +130,8 @@ actor OpenAISocket {
     private let session: URLSession
     private let continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
     private var receiveTask: Task<Void, Never>?
+    private var hasPendingTranscript = false
+    private var finalizationWaiter: CheckedContinuation<Void, Never>?
 
     private init(task: URLSessionWebSocketTask, session: URLSession, continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?) {
         self.task = task
@@ -211,11 +212,25 @@ actor OpenAISocket {
         ])
     }
 
-    func finishAudio() async {
+    func finishAudioAndWaitForFinal() async {
         try? await sendJSON(["type": "input_audio_buffer.commit"])
+        guard hasPendingTranscript else { return }
+
+        await withCheckedContinuation { continuation in
+            guard hasPendingTranscript else {
+                continuation.resume()
+                return
+            }
+            finalizationWaiter = continuation
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                self.resumeFinalizationWaiter()
+            }
+        }
     }
 
     func close() {
+        resumeFinalizationWaiter()
         receiveTask?.cancel()
         task.cancel(with: .goingAway, reason: nil)
         session.invalidateAndCancel()
@@ -230,6 +245,7 @@ actor OpenAISocket {
                     let root = try Self.decode(message)
 
                     if let error = Self.serverError(root) {
+                        await self.finishPendingTranscript()
                         continuation?.finish(throwing: NSError(domain: "OpenAI", code: 2, userInfo: [NSLocalizedDescriptionKey: error]))
                         return
                     }
@@ -239,18 +255,22 @@ actor OpenAISocket {
                     switch type {
                     case "conversation.item.input_audio_transcription.delta":
                         if let delta = root["delta"] as? String {
+                            await self.notePendingTranscript(delta)
                             continuation?.yield(.interim(delta))
                         }
                     case "conversation.item.input_audio_transcription.completed":
                         if let transcript = root["transcript"] as? String {
+                            await self.finishPendingTranscript()
                             continuation?.yield(.final(transcript))
                         }
                     case "response.audio_transcript.delta":
                         if let delta = root["delta"] as? String {
+                            await self.notePendingTranscript(delta)
                             continuation?.yield(.interim(delta))
                         }
                     case "response.audio_transcript.done":
                         if let transcript = root["transcript"] as? String {
+                            await self.finishPendingTranscript()
                             continuation?.yield(.final(transcript))
                         }
                     default:
@@ -258,11 +278,28 @@ actor OpenAISocket {
                     }
                 }
             } catch {
+                await self.finishPendingTranscript()
                 if !Task.isCancelled {
                     continuation?.finish(throwing: error)
                 }
             }
         }
+    }
+
+    private func notePendingTranscript(_ text: String) {
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            hasPendingTranscript = true
+        }
+    }
+
+    private func finishPendingTranscript() {
+        hasPendingTranscript = false
+        resumeFinalizationWaiter()
+    }
+
+    private func resumeFinalizationWaiter() {
+        finalizationWaiter?.resume()
+        finalizationWaiter = nil
     }
 
     private func sendJSON(_ object: [String: Any]) async throws {
