@@ -2,10 +2,6 @@ import AppKit
 import Foundation
 import Observation
 
-extension Notification.Name {
-    static let pocketStackNotesDidChange = Notification.Name("PocketStackNotesDidChange")
-}
-
 @MainActor
 @Observable
 final class AppModel {

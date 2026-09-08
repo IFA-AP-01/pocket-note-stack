@@ -1,10 +1,3 @@
-//
-//  Pocket_StackApp.swift
-//  Pocket Stack
-//
-//  Created by Huy Huỳnh on 1/9/26.
-//
-
 import SwiftUI
 
 @main
@@ -22,7 +15,6 @@ struct Pocket_StackApp: App {
 
         Window("Settings", id: "settings") {
             SettingsView(preferences: environment.preferences, environment: environment)
-                .background(SettingsWindowRegistration().frame(width: 0, height: 0))
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -30,8 +22,23 @@ struct Pocket_StackApp: App {
     }
 }
 
+private struct PocketStackMenuBarLabel: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image(systemName: "note.text")
+            .accessibilityLabel("Pocket Stack")
+            .onReceive(NotificationCenter.default.publisher(for: .pocketStackOpenSettings)) { _ in
+                SettingsWindowPresenter.shared.present(fromMenu: false) {
+                    openWindow(id: "settings")
+                }
+            }
+    }
+}
+
 private struct PocketStackMenuContent: View {
     let environment: AppEnvironment
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject private var dictation: DictationCoordinator
 
     init(environment: AppEnvironment) {
@@ -65,7 +72,11 @@ private struct PocketStackMenuContent: View {
 
         Divider()
 
-        PocketStackSettingsButton {
+        Button {
+            SettingsWindowPresenter.shared.present(fromMenu: true) {
+                openWindow(id: "settings")
+            }
+        } label: {
             Label("Settings…", systemImage: "gearshape")
         }
 
