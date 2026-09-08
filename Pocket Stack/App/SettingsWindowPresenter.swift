@@ -9,19 +9,30 @@ extension Notification.Name {
 @MainActor
 enum AppWindowActivation {
     static func present(_ window: NSWindow) {
-        NSApp.activate(ignoringOtherApps: true)
-        window.level = .normal
-        window.makeKeyAndOrderFront(nil)
+        // Elevate level temporarily so the window punches through other applications
+        // (e.g. Chrome, Safari) immediately (0ms), even before AppKit completes menu dismissal.
+        window.level = .floating
         window.orderFrontRegardless()
+        window.makeKeyAndOrderFront(nil)
+
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+        NSApp.activate(ignoringOtherApps: true)
+
+        // After AppKit's menu dismissal cycle finishes and attempts to restore the previous app (~100-140ms),
+        // settle the window back to .normal level and re-assert frontmost key focus.
+        Task { @MainActor [weak window] in
+            try? await Task.sleep(for: .milliseconds(140))
+            guard let window, window.isVisible else { return }
+            window.level = .normal
+            NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
     }
 
     static func presentAfterMenuDismisses(_ window: NSWindow) {
         present(window)
-        Task { @MainActor [weak window] in
-            try? await Task.sleep(for: .milliseconds(80))
-            guard let window else { return }
-            present(window)
-        }
     }
 }
 
@@ -35,33 +46,49 @@ final class SettingsWindowPresenter {
 
     private init() {}
 
+    private func discoverSettingsWindow() -> NSWindow? {
+        NSApp.windows.first { candidate in
+            guard !(candidate is DeckPanel) else { return false }
+            let title = candidate.title.lowercased()
+            let id = candidate.identifier?.rawValue.lowercased() ?? ""
+            return title == "settings" || id == "settings" || title.contains("settings") || id.contains("settings")
+        }
+    }
+
     func register(_ window: NSWindow?) {
         guard let window else { return }
+        window.isReleasedWhenClosed = false
         self.window = window
+
         if pendingPresentation {
             pendingPresentation = false
-            AppWindowActivation.presentAfterMenuDismisses(window)
+            AppWindowActivation.present(window)
         }
     }
 
     func present(openWindow: () -> Void) {
-        if let window {
-            AppWindowActivation.presentAfterMenuDismisses(window)
+        // If window already exists (open or hidden), bring it to front immediately (0ms)
+        if let existing = window ?? discoverSettingsWindow() {
+            self.window = existing
+            AppWindowActivation.present(existing)
             return
         }
 
+        // Otherwise, request SwiftUI to open the window scene for the first time
         pendingPresentation = true
         openWindow()
+
         presentationTask?.cancel()
         presentationTask = Task { @MainActor [weak self] in
-            for delay in [0, 40, 120, 240] {
-                if delay > 0 {
-                    try? await Task.sleep(for: .milliseconds(delay))
-                }
+            for delay in [30, 80, 160] {
+                try? await Task.sleep(for: .milliseconds(delay))
                 guard !Task.isCancelled, let self else { return }
-                if let window = self.window {
-                    self.pendingPresentation = false
-                    AppWindowActivation.presentAfterMenuDismisses(window)
+                if let target = self.window ?? self.discoverSettingsWindow() {
+                    self.window = target
+                    if self.pendingPresentation {
+                        self.pendingPresentation = false
+                        AppWindowActivation.present(target)
+                    }
                     return
                 }
             }

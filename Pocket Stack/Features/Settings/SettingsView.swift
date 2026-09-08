@@ -83,7 +83,7 @@ struct SettingsView: View {
 
 private struct GeneralSettingsView: View {
     @Bindable var preferences: AppPreferences
-    @State private var launchAtLogin = AppPreferences.shared.launchAtLogin
+    @State private var launchAtLogin = false
     @State private var launchAtLoginError: String?
     private let fonts = ["", "Noteworthy-Light", "AvenirNext-Regular", "Georgia", "Menlo-Regular"]
 
@@ -160,7 +160,7 @@ private struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
-            launchAtLogin = preferences.launchAtLogin
+            launchAtLogin = await preferences.checkLaunchAtLogin()
         }
         .alert("Unable to update Login Items", isPresented: Binding(
             get: { launchAtLoginError != nil },
@@ -175,12 +175,14 @@ private struct GeneralSettingsView: View {
     private func updateLaunchAtLogin(_ enabled: Bool) {
         let previousValue = launchAtLogin
         launchAtLogin = enabled
-        do {
-            try preferences.setLaunchAtLogin(enabled)
-            launchAtLogin = preferences.launchAtLogin
-        } catch {
-            launchAtLogin = previousValue
-            launchAtLoginError = error.localizedDescription
+        Task {
+            do {
+                try await preferences.setLaunchAtLoginAsync(enabled)
+                launchAtLogin = await preferences.checkLaunchAtLogin()
+            } catch {
+                launchAtLogin = previousValue
+                launchAtLoginError = error.localizedDescription
+            }
         }
     }
 }

@@ -118,11 +118,27 @@ final class AppPreferences {
         SMAppService.mainApp.status == .enabled
     }
 
+    func checkLaunchAtLogin() async -> Bool {
+        await Task.detached(priority: .utility) {
+            SMAppService.mainApp.status == .enabled
+        }.value
+    }
+
     func setLaunchAtLogin(_ enabled: Bool) throws {
         if enabled {
             try SMAppService.mainApp.register()
         } else {
             try SMAppService.mainApp.unregister()
         }
+    }
+
+    func setLaunchAtLoginAsync(_ enabled: Bool) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        }.value
     }
 }
