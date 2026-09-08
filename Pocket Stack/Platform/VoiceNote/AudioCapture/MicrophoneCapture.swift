@@ -26,7 +26,7 @@ final class MicrophoneCapture: @unchecked Sendable {
     func start(deviceUID: String?) async throws {
         try await requestPermission()
         let input = engine.inputNode
-        if let deviceID = AudioDeviceManager.deviceID(for: deviceUID) {
+        if let deviceID = AudioInputDeviceCatalog.deviceID(for: deviceUID) {
             guard let unit = input.audioUnit else { throw MicrophoneCaptureError.unavailable }
             var mutableID = deviceID
             let status = AudioUnitSetProperty(

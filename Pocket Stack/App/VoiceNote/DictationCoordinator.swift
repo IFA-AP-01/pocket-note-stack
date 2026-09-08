@@ -1,54 +1,34 @@
 import AppKit
 import Combine
 import ScreenCaptureKit
-import Speech
 
 @MainActor
 final class DictationCoordinator: ObservableObject {
     private let preferences: AppPreferences
+    private let engineFactory: any DictationEngineFactory
     @Published private(set) var isRecording = false
     private var currentSession: (any DictationSession)?
     private var eventTask: Task<Void, Never>?
     private var levelTask: Task<Void, Never>?
     private var silenceTask: Task<Void, Never>?
 
-    init(preferences: AppPreferences) { self.preferences = preferences }
+    init(
+        preferences: AppPreferences,
+        engineFactory: any DictationEngineFactory = DefaultDictationEngineFactory()
+    ) {
+        self.preferences = preferences
+        self.engineFactory = engineFactory
+    }
 
     func checkProviderReadiness() async -> (isReady: Bool, reason: String) {
         if preferences.audioSource != .microphone, !CGPreflightScreenCaptureAccess() {
             return (false, "Screen recording permission is required for system audio capture.")
         }
 
-        switch preferences.speechProvider {
-        case .appleOnDevice:
-            if #available(macOS 26.0, *) {
-                let localeID = (preferences.speechLocale.isEmpty || preferences.speechLocale == "auto") ? Locale.current.identifier : preferences.speechLocale
-                let locale = Locale(identifier: localeID)
-                guard let supported = await DictationTranscriber.supportedLocale(equivalentTo: locale) else {
-                    return (false, "The selected speaker language is not supported by Apple On-Device speech recognition.")
-                }
-                let transcriber = DictationTranscriber(locale: supported, preset: .progressiveLongDictation)
-                let status = await AssetInventory.status(forModules: [transcriber])
-                if status != .installed {
-                    return (false, "Apple On-Device language model is not downloaded yet. Please download it in Settings.")
-                }
-                return (true, "")
-            } else {
-                return (false, "Apple On-Device speech recognition requires macOS 26 or later.")
-            }
-        case .geminiLive:
-            let key = (try? KeychainStore().string(for: "gemini-api-key"))?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if key == nil || key?.isEmpty == true {
-                return (false, "Google Gemini API key is not configured. Please enter your API key in Settings.")
-            }
-            return (true, "")
-        case .openAI:
-            let key = (try? KeychainStore().string(for: "openai-api-key"))?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if key == nil || key?.isEmpty == true {
-                return (false, "OpenAI API key is not configured. Please enter your API key in Settings.")
-            }
-            return (true, "")
-        }
+        let readiness = await engineFactory
+            .makeEngine(for: preferences.speechProvider)
+            .readiness(for: makeRequest())
+        return (readiness.isReady, readiness.reason)
     }
 
     func beginPreparing() {
@@ -67,26 +47,9 @@ final class DictationCoordinator: ObservableObject {
             throw DictationError.screenCapturePermissionDenied
         }
 
-        let engine: any DictationEngine
-        switch preferences.speechProvider {
-        case .appleOnDevice:
-            guard #available(macOS 26.0, *) else {
-                throw DictationError.appleOnDeviceUnavailable
-            }
-            engine = AppleDictationEngine()
-        case .geminiLive:
-            engine = GeminiLiveEngine()
-        case .openAI:
-            engine = OpenAIRealtimeEngine()
-        }
-        let locale: String?
-        if preferences.speechProvider == .appleOnDevice {
-            locale = (preferences.speechLocale.isEmpty || preferences.speechLocale == "auto") ? Locale.current.identifier : preferences.speechLocale
-        } else {
-            locale = (preferences.speechLocale == "auto" || preferences.speechLocale.isEmpty) ? nil : preferences.speechLocale
-        }
+        let engine = engineFactory.makeEngine(for: preferences.speechProvider)
         do {
-            let session = try await engine.start(localeIdentifier: locale, deviceUID: preferences.microphoneUID, audioSource: preferences.audioSource)
+            let session = try await engine.start(makeRequest())
             guard !Task.isCancelled else {
                 await session.cancel()
                 throw CancellationError()
@@ -148,6 +111,24 @@ final class DictationCoordinator: ObservableObject {
             isRecording = false
             throw error
         }
+    }
+
+    private func makeRequest() -> DictationRequest {
+        let locale: String?
+        if preferences.speechProvider == .appleOnDevice {
+            locale = (preferences.speechLocale.isEmpty || preferences.speechLocale == "auto")
+                ? Locale.current.identifier
+                : preferences.speechLocale
+        } else {
+            locale = (preferences.speechLocale == "auto" || preferences.speechLocale.isEmpty)
+                ? nil
+                : preferences.speechLocale
+        }
+        return DictationRequest(
+            localeIdentifier: locale,
+            deviceUID: preferences.microphoneUID,
+            audioSource: preferences.audioSource
+        )
     }
 
     private func resetSilenceTimer(bridge: EditorBridge) {

@@ -1,6 +1,6 @@
 import AVFoundation
 
-final class AudioBufferConverter: @unchecked Sendable {
+final class AudioFormatConverter: @unchecked Sendable {
     private let targetFormat: AVAudioFormat
     private let lock = NSLock()
     private var converter: AVAudioConverter?
@@ -37,16 +37,18 @@ final class AudioBufferConverter: @unchecked Sendable {
 }
 
 final class PCM16StreamEncoder: @unchecked Sendable {
-    private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
-    private lazy var converter = AudioBufferConverter(targetFormat: format)
     private let lock = NSLock()
     private var pending = Data()
-    private let chunkBytes = 3_200
+    private let chunkBytes: Int
+
+    init(sampleRate: Double, chunkDuration: TimeInterval = 0.1) {
+        self.chunkBytes = max(2, Int(sampleRate * chunkDuration) * MemoryLayout<Int16>.size)
+    }
 
     func encode(_ buffer: AVAudioPCMBuffer) -> [Data] {
-        guard let converted = converter.convert(buffer), let channel = converted.floatChannelData?[0] else { return [] }
-        var data = Data(capacity: Int(converted.frameLength) * 2)
-        for index in 0..<Int(converted.frameLength) {
+        guard let channel = buffer.floatChannelData?[0] else { return [] }
+        var data = Data(capacity: Int(buffer.frameLength) * 2)
+        for index in 0..<Int(buffer.frameLength) {
             var sample = Int16(max(-1, min(1, channel[index])) * Float(Int16.max)).littleEndian
             withUnsafeBytes(of: &sample) { data.append(contentsOf: $0) }
         }

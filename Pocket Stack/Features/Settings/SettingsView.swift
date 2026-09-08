@@ -416,7 +416,7 @@ private final class DictationSettingsModel {
     }
 
     func load(preferences: AppPreferences) async {
-        devices = AudioDeviceManager.inputDevices()
+        devices = AudioInputDeviceCatalog.inputDevices()
         geminiApiKey = (try? keychain.string(for: "gemini-api-key")) ?? ""
         openAIApiKey = (try? keychain.string(for: "openai-api-key")) ?? ""
         screenCaptureGranted = CGPreflightScreenCaptureAccess()

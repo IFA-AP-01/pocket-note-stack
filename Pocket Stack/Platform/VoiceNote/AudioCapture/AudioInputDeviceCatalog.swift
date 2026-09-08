@@ -9,7 +9,7 @@ struct AudioInputDevice: Identifiable, Hashable, Sendable {
     var id: String { uid }
 }
 
-enum AudioDeviceManager {
+enum AudioInputDeviceCatalog {
     static func inputDevices() -> [AudioInputDevice] {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
