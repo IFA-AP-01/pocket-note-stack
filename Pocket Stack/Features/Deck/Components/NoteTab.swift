@@ -1,12 +1,5 @@
 import SwiftUI
 
-struct NoteTabFramesPreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGRect] = [:]
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
-
 struct NoteTab: View {
     let note: Note
     let labelled: Bool
@@ -18,6 +11,7 @@ struct NoteTab: View {
     var isDictating: Bool = false
     var audioLevel: Float = 0.0
     let onHoverChange: (Bool) -> Void
+    let onFrameChange: (CGRect?) -> Void
     let action: () -> Void
     let onDelete: () -> Void
     var onStopDictation: (() -> Void)? = nil
@@ -56,13 +50,10 @@ struct NoteTab: View {
         .overlay(alignment: edge.pinAlignment) {
             if note.isPinned { Circle().fill(palette.accent).frame(width: DeckMetrics.Tab.pinIndicatorSize, height: DeckMetrics.Tab.pinIndicatorSize).padding(DeckMetrics.Tab.pinIndicatorPadding) }
         }
-        .background {
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: NoteTabFramesPreferenceKey.self,
-                    value: [note.id: geo.frame(in: .named("DeckContainer"))]
-                )
-            }
+        .onGeometryChange(for: CGRect.self) { geometry in
+            geometry.frame(in: .named("DeckContainer"))
+        } action: { frame in
+            onFrameChange(frame)
         }
         .contextMenu {
             if isDictating {
@@ -78,6 +69,7 @@ struct NoteTab: View {
             }
         }
         .onHover(perform: onHoverChange)
+        .onDisappear { onFrameChange(nil) }
         .animation(.spring(response: DeckMetrics.Animation.expandSpringResponse, dampingFraction: DeckMetrics.Animation.expandSpringDamping), value: isExpanded)
         .animation(.easeOut(duration: DeckMetrics.Animation.hoverDuration), value: isHovered)
         .animation(.spring(response: DeckMetrics.Animation.openSpringResponse, dampingFraction: DeckMetrics.Animation.openSpringDamping), value: isOpen)

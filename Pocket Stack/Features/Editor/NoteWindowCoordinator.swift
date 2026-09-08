@@ -288,6 +288,7 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
     }
 
     private func presentWindow() {
+        window.level = .statusBar
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.alignCloseButton()
@@ -406,8 +407,17 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
         reevaluateAttachment()
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        window.level = .statusBar
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        window.level = currentPinned == true ? .statusBar : .normal
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
+        persistFrame()
         owner.windowDidClose(noteID: noteID)
     }
 
@@ -432,26 +442,44 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
 
     private static func initialFrame(noteID: UUID, preferences: AppPreferences, anchor: NoteWindowAnchor?) -> CGRect {
         let defaults = UserDefaults.standard
-        let detachedKey = "note.window.detached.\(noteID.uuidString)"
-        if anchor == nil || defaults.bool(forKey: detachedKey),
-           let saved = defaults.string(forKey: "note.window.frame.\(noteID.uuidString)") {
+        if let saved = defaults.string(forKey: "note.window.frame.\(noteID.uuidString)") {
             let frame = NSRectFromString(saved)
-            if frame.width > 0, frame.height > 0 { return frame }
+            if frame.width > 0, frame.height > 0 {
+                return frame
+            }
         }
         let size = preferences.noteSize
-        guard let anchor else {
-            let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: size.width, height: size.height)
-            return CGRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2, width: size.width, height: size.height)
-        }
-        let gap: CGFloat = 10
-        switch anchor.edge {
+        let screen = anchor.flatMap { target in
+            NSScreen.screens.first { DeckCoordinator.displayID($0) == target.displayID }
+        } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? CGRect(origin: .zero, size: size)
+        let center: CGPoint
+        switch anchor?.edge {
         case .left:
-            return CGRect(x: anchor.tabFrame.maxX + gap, y: anchor.tabFrame.midY - size.height / 2, width: size.width, height: size.height)
+            center = CGPoint(
+                x: visible.minX + visible.width * 0.25,
+                y: visible.minY + visible.height * 0.65
+            )
         case .right:
-            return CGRect(x: anchor.tabFrame.minX - gap - size.width, y: anchor.tabFrame.midY - size.height / 2, width: size.width, height: size.height)
+            center = CGPoint(
+                x: visible.minX + visible.width * 0.75,
+                y: visible.minY + visible.height * 0.65
+            )
         case .bottom:
-            return CGRect(x: anchor.tabFrame.midX - size.width / 2, y: anchor.tabFrame.maxY + gap, width: size.width, height: size.height)
+            center = CGPoint(
+                x: visible.midX,
+                y: visible.minY + visible.height * 0.25
+            )
+        case nil:
+            center = CGPoint(x: visible.midX, y: visible.midY)
         }
+        let frame = CGRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        return frame
     }
 
     private var frameKey: String { "note.window.frame.\(noteID.uuidString)" }

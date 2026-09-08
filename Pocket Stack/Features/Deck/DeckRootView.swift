@@ -53,6 +53,7 @@ struct DeckRootView: View {
             edge: edge,
             openOnHover: preferences.openOnHover,
             onOpen: controller.openNote,
+            onFrameChange: controller.noteTabFrameChanged,
             onReorder: model.reorder,
             onPrevious: { state.tabWindowStart = window.movingPrevious().startIndex },
             onNext: { state.tabWindowStart = window.movingNext().startIndex },
@@ -72,8 +73,5 @@ struct DeckRootView: View {
         fan
             .coordinateSpace(name: "DeckContainer")
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge.rootAlignment)
-            .onPreferenceChange(NoteTabFramesPreferenceKey.self) { frames in
-                controller.scheduleTabFramesUpdate(frames)
-            }
     }
 }

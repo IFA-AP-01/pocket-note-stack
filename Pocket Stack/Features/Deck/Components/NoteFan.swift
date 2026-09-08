@@ -14,6 +14,7 @@ struct NoteFan: View {
     let edge: DeckEdge
     let openOnHover: Bool
     let onOpen: (UUID) -> Void
+    let onFrameChange: (UUID, CGRect?) -> Void
     let onReorder: (UUID, UUID?) -> Void
     let onPrevious: () -> Void
     let onNext: () -> Void
@@ -117,6 +118,7 @@ struct NoteFan: View {
                     isDictating: dictatingNoteID == note.id,
                     audioLevel: audioLevel,
                     onHoverChange: { updateHover(note: note, inside: $0) },
+                    onFrameChange: { onFrameChange(note.id, $0) },
                     action: { open(note.id) },
                     onDelete: { onDelete(note.id) },
                     onStopDictation: { onStopDictation?(note.id) }
