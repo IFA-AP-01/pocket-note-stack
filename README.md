@@ -1,6 +1,6 @@
 # Pocket Stack
 
-Pocket Stack is a native macOS 26+ note app whose notes live in a floating deck at the screen edge. It is an accessory app: there is no Dock icon or ordinary main window.
+Pocket Stack is a native macOS note app whose notes live in a floating deck at the screen edge. It is an accessory app: there is no Dock icon or ordinary main window.
 
 ## Features
 

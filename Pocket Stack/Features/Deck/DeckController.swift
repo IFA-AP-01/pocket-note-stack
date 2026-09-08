@@ -70,6 +70,8 @@ final class DeckController: NSObject {
     private var shrinkWork: DispatchWorkItem?
     private let transitionScheduler = DeckTransitionScheduler()
     private var tabFrames: [UUID: CGRect] = [:]
+    private var pendingLocalTabFrames: [UUID: CGRect]?
+    private var tabFrameUpdateScheduled = false
     private var anchoredNoteIDs: Set<UUID> = []
     private var pendingOpenNoteIDs: Set<UUID> = []
     private var pendingState: DeckState?
@@ -232,7 +234,20 @@ final class DeckController: NSObject {
         NSMenu.popUpContextMenu(menu, with: event, for: tracking)
     }
 
-    func updateTabFrames(_ localFrames: [UUID: CGRect]) {
+    func scheduleTabFramesUpdate(_ localFrames: [UUID: CGRect]) {
+        pendingLocalTabFrames = localFrames
+        guard !tabFrameUpdateScheduled else { return }
+        tabFrameUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.tabFrameUpdateScheduled = false
+            guard let localFrames = self.pendingLocalTabFrames else { return }
+            self.pendingLocalTabFrames = nil
+            self.updateTabFrames(localFrames)
+        }
+    }
+
+    private func updateTabFrames(_ localFrames: [UUID: CGRect]) {
         guard let screen else { return }
         tabFrames = localFrames.mapValues { frame in
             let converted = panel.convertToScreen(hosting.convert(frame, to: nil))

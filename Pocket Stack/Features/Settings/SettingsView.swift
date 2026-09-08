@@ -334,6 +334,32 @@ private let geminiLanguages: [GeminiLanguage] = {
     return [GeminiLanguage(id: "auto", name: "Auto detect")] + sortedRest
 }()
 
+private let openAILanguages: [GeminiLanguage] = {
+    var namesByCode: [String: String] = [:]
+    for language in geminiLanguages where language.id != "auto" {
+        guard let code = Locale(identifier: language.id).language.languageCode?.identifier.lowercased(),
+              code.count == 2 else { continue }
+        namesByCode[code] = Locale.current.localizedString(forLanguageCode: code)?.capitalized ?? language.name
+    }
+    namesByCode["zh-cn"] = "Chinese (Simplified)"
+    namesByCode["zh-tw"] = "Chinese (Traditional)"
+    namesByCode["zh-hk"] = "Chinese (Hong Kong)"
+    let languages = namesByCode.map { GeminiLanguage(id: $0.key, name: $0.value) }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    return [GeminiLanguage(id: "auto", name: "Auto detect")] + languages
+}()
+
+private func openAILanguageIdentifier(from identifier: String) -> String {
+    guard !identifier.isEmpty, identifier != "auto" else { return "auto" }
+    let normalized = identifier.replacingOccurrences(of: "_", with: "-").lowercased()
+    if normalized.hasPrefix("zh-") {
+        if normalized.contains("tw") || normalized.contains("hant") { return "zh-tw" }
+        if normalized.contains("hk") { return "zh-hk" }
+        return "zh-cn"
+    }
+    return Locale(identifier: normalized).language.languageCode?.identifier.lowercased() ?? "auto"
+}
+
 @MainActor
 @Observable
 private final class DictationSettingsModel {
@@ -670,10 +696,12 @@ private final class DictationSettingsModel {
                     preferences.speechLocale = current.identifier.replacingOccurrences(of: "_", with: "-")
                 }
             }
-        case .geminiLive, .openAI:
-            if preferences.speechLocale.isEmpty {
-                preferences.speechLocale = "auto"
-            }
+        case .geminiLive:
+            let normalized = preferences.geminiSpeechLocale.replacingOccurrences(of: "_", with: "-")
+            preferences.geminiSpeechLocale = geminiLanguages.contains(where: { $0.id == normalized }) ? normalized : "auto"
+        case .openAI:
+            let normalized = openAILanguageIdentifier(from: preferences.openAISpeechLocale)
+            preferences.openAISpeechLocale = openAILanguages.contains(where: { $0.id == normalized }) ? normalized : "auto"
         }
     }
 }
@@ -736,7 +764,11 @@ private struct DictationSettingsView: View {
                 }
 
                 Picker("Microphone", selection: Binding(
-                    get: { preferences.microphoneUID ?? "" },
+                    get: {
+                        guard let uid = preferences.microphoneUID,
+                              model.devices.contains(where: { $0.uid == uid }) else { return "" }
+                        return uid
+                    },
                     set: { preferences.microphoneUID = $0.isEmpty ? nil : $0 }
                 )) {
                     Text("System default").tag("")
@@ -781,7 +813,13 @@ private struct DictationSettingsView: View {
                 }
 
                 if preferences.speechProvider == .geminiLive {
-                    Picker("Speaker language", selection: $preferences.speechLocale) {
+                    Picker("Speaker language", selection: Binding(
+                        get: {
+                            let locale = preferences.geminiSpeechLocale
+                            return geminiLanguages.contains(where: { $0.id == locale }) ? locale : "auto"
+                        },
+                        set: { preferences.geminiSpeechLocale = $0 }
+                    )) {
                         ForEach(geminiLanguages) { lang in
                             Text(lang.name).tag(lang.id)
                         }
@@ -789,8 +827,14 @@ private struct DictationSettingsView: View {
                 }
 
                 if preferences.speechProvider == .openAI {
-                    Picker("Speaker language", selection: $preferences.speechLocale) {
-                        ForEach(geminiLanguages) { lang in
+                    Picker("Speaker language", selection: Binding(
+                        get: {
+                            let locale = openAILanguageIdentifier(from: preferences.openAISpeechLocale)
+                            return openAILanguages.contains(where: { $0.id == locale }) ? locale : "auto"
+                        },
+                        set: { preferences.openAISpeechLocale = $0 }
+                    )) {
+                        ForEach(openAILanguages) { lang in
                             Text(lang.name).tag(lang.id)
                         }
                     }

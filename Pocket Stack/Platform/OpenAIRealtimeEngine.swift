@@ -1,5 +1,7 @@
 import Foundation
 
+private let openAITranscriptionModel = "gpt-live-transcribe"
+
 struct OpenAIRealtimeEngine: DictationEngine {
     let keychain: KeychainStore
     init(keychain: KeychainStore = KeychainStore()) { self.keychain = keychain }
@@ -15,21 +17,8 @@ struct OpenAIRealtimeEngine: DictationEngine {
         guard let key = try keychain.string(for: "openai-api-key")?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
             throw DictationError.missingAPIKey
         }
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 10
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw DictationError.invalidServerResponse
-        }
-        if httpResponse.statusCode == 401 {
-            throw NSError(domain: "OpenAI", code: 401, userInfo: [NSLocalizedDescriptionKey: "Invalid OpenAI API key."])
-        }
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw NSError(domain: "OpenAI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "OpenAI returned status \(httpResponse.statusCode)"])
-        }
+        let socket = try await OpenAISocket.connect(apiKey: key, localeIdentifier: nil, continuation: nil)
+        await socket.close()
     }
 }
 
@@ -63,7 +52,12 @@ final class OpenAIDictationSession: DictationSession, @unchecked Sendable {
             Task { await socket.sendAudio(resampled) }
         }
         let session = OpenAIDictationSession(events: events, continuation: continuation, socket: socket, capture: capture)
-        try await capture.start(deviceUID: deviceUID)
+        do {
+            try await capture.start(deviceUID: deviceUID)
+        } catch {
+            await socket.close()
+            throw error
+        }
         session.limitTask = Task {
             try? await Task.sleep(for: .seconds(570))
             guard !Task.isCancelled else { return }
@@ -131,7 +125,9 @@ actor OpenAISocket {
     private let continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
     private var receiveTask: Task<Void, Never>?
     private var hasPendingTranscript = false
+    private var currentTranscript = ""
     private var finalizationWaiter: CheckedContinuation<Void, Never>?
+    private var sentAudioChunks = 0
 
     private init(task: URLSessionWebSocketTask, session: URLSession, continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?) {
         self.task = task
@@ -144,46 +140,19 @@ actor OpenAISocket {
         localeIdentifier: String?,
         continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
     ) async throws -> OpenAISocket {
-        guard let url = URL(string: "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview") else {
+        guard let url = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription") else {
             throw DictationError.invalidServerResponse
         }
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("realtime=v1", forHTTPHeaderField: "OpenAI-Beta")
 
         let session = URLSession(configuration: .ephemeral)
         let task = session.webSocketTask(with: request)
         let socket = OpenAISocket(task: task, session: session, continuation: continuation)
         task.resume()
 
-        // Configure session with realtime transcription and server VAD
-        var transcriptionConfig: [String: Any] = [
-            "model": "whisper-1"
-        ]
-        if let localeIdentifier, localeIdentifier != "auto" {
-            transcriptionConfig["language"] = localeIdentifier
-        }
-
-        let sessionUpdate: [String: Any] = [
-            "type": "session.update",
-            "session": [
-                "modalities": ["text"],
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "input_audio_transcription": transcriptionConfig,
-                "turn_detection": [
-                    "type": "server_vad",
-                    "threshold": 0.5,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500
-                ]
-            ]
-        ]
-
-        try await socket.sendJSON(sessionUpdate)
-
-        // Await confirmation or session.created/updated
+        // Do not start audio capture until the dedicated transcription session is confirmed.
         let first = try await withThrowingTaskGroup(of: URLSessionWebSocketTask.Message.self) { group in
             group.addTask { try await task.receive() }
             group.addTask {
@@ -199,6 +168,48 @@ actor OpenAISocket {
         if let error = serverError(object) {
             throw NSError(domain: "OpenAI", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
         }
+        guard let type = object["type"] as? String,
+              type == "session.created" || type == "transcription_session.created" else {
+            throw DictationError.invalidServerResponse
+        }
+
+        var transcription: [String: Any] = ["model": openAITranscriptionModel]
+        if let localeIdentifier, localeIdentifier != "auto" {
+            transcription["languages"] = [localeIdentifier]
+        }
+        let sessionUpdate: [String: Any] = [
+            "type": "session.update",
+            "session": [
+                "type": "transcription",
+                "audio": [
+                    "input": [
+                        "format": ["type": "audio/pcm", "rate": 24_000],
+                        "transcription": transcription,
+                        "turn_detection": NSNull()
+                    ]
+                ]
+            ]
+        ]
+        try await socket.sendJSON(sessionUpdate)
+
+        let updated = try await withThrowingTaskGroup(of: URLSessionWebSocketTask.Message.self) { group in
+            group.addTask { try await task.receive() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(8))
+                throw DictationError.timedOut
+            }
+            guard let result = try await group.next() else { throw DictationError.timedOut }
+            group.cancelAll()
+            return result
+        }
+        let updatedObject = try decode(updated)
+        let updatedType = updatedObject["type"] as? String ?? "missing-type"
+        if let error = serverError(updatedObject) {
+            throw NSError(domain: "OpenAI", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
+        }
+        guard updatedType == "session.updated" || updatedType == "transcription_session.updated" else {
+            throw DictationError.invalidServerResponse
+        }
 
         await socket.startReceiving()
         return socket
@@ -206,24 +217,29 @@ actor OpenAISocket {
 
     func sendAudio(_ data: Data) async {
         guard !data.isEmpty else { return }
-        try? await sendJSON([
-            "type": "input_audio_buffer.append",
-            "audio": data.base64EncodedString()
-        ])
+        do {
+            try await sendJSON([
+                "type": "input_audio_buffer.append",
+                "audio": data.base64EncodedString()
+            ])
+            sentAudioChunks += 1
+        } catch {
+            continuation?.finish(throwing: error)
+        }
     }
 
     func finishAudioAndWaitForFinal() async {
-        try? await sendJSON(["type": "input_audio_buffer.commit"])
-        guard hasPendingTranscript else { return }
+        do {
+            try await sendJSON(["type": "input_audio_buffer.commit"])
+        } catch {
+            return
+        }
+        guard sentAudioChunks > 0 else { return }
 
         await withCheckedContinuation { continuation in
-            guard hasPendingTranscript else {
-                continuation.resume()
-                return
-            }
             finalizationWaiter = continuation
             Task {
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .seconds(8))
                 self.resumeFinalizationWaiter()
             }
         }
@@ -255,20 +271,10 @@ actor OpenAISocket {
                     switch type {
                     case "conversation.item.input_audio_transcription.delta":
                         if let delta = root["delta"] as? String {
-                            await self.notePendingTranscript(delta)
-                            continuation?.yield(.interim(delta))
+                            let transcript = await self.appendTranscriptDelta(delta)
+                            continuation?.yield(.interim(transcript))
                         }
                     case "conversation.item.input_audio_transcription.completed":
-                        if let transcript = root["transcript"] as? String {
-                            await self.finishPendingTranscript()
-                            continuation?.yield(.final(transcript))
-                        }
-                    case "response.audio_transcript.delta":
-                        if let delta = root["delta"] as? String {
-                            await self.notePendingTranscript(delta)
-                            continuation?.yield(.interim(delta))
-                        }
-                    case "response.audio_transcript.done":
                         if let transcript = root["transcript"] as? String {
                             await self.finishPendingTranscript()
                             continuation?.yield(.final(transcript))
@@ -286,14 +292,17 @@ actor OpenAISocket {
         }
     }
 
-    private func notePendingTranscript(_ text: String) {
-        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    private func appendTranscriptDelta(_ delta: String) -> String {
+        currentTranscript += delta
+        if !delta.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             hasPendingTranscript = true
         }
+        return currentTranscript
     }
 
     private func finishPendingTranscript() {
         hasPendingTranscript = false
+        currentTranscript = ""
         resumeFinalizationWaiter()
     }
 

@@ -73,7 +73,7 @@ struct DeckRootView: View {
             .coordinateSpace(name: "DeckContainer")
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge.rootAlignment)
             .onPreferenceChange(NoteTabFramesPreferenceKey.self) { frames in
-                controller.updateTabFrames(frames)
+                controller.scheduleTabFramesUpdate(frames)
             }
     }
 }
