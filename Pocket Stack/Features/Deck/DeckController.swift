@@ -1,12 +1,6 @@
 import AppKit
 import Observation
-import OSLog
 import SwiftUI
-
-private let deckGeometryLogger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "PocketStack",
-    category: "NoteTabGeometry"
-)
 
 enum DeckState: Equatable {
     case rest
@@ -76,8 +70,6 @@ final class DeckController: NSObject {
     private var shrinkWork: DispatchWorkItem?
     private let transitionScheduler = DeckTransitionScheduler()
     private var tabFrames: [UUID: CGRect] = [:]
-    private var tabFrameReportCounts: [UUID: Int] = [:]
-    private var duplicateTabFrameReportCounts: [UUID: Int] = [:]
     private var anchoredNoteIDs: Set<UUID> = []
     private var pendingOpenNoteIDs: Set<UUID> = []
     private var pendingState: DeckState?
@@ -242,26 +234,18 @@ final class DeckController: NSObject {
 
     func noteTabFrameChanged(noteID: UUID, localFrame: CGRect?) {
         guard let localFrame else {
-            deckGeometryLogger.notice(
-                "frame summary id=\(noteID.uuidString, privacy: .public) reports=\(self.tabFrameReportCounts.removeValue(forKey: noteID) ?? 0) duplicates=\(self.duplicateTabFrameReportCounts.removeValue(forKey: noteID) ?? 0) lastFrame=\(self.tabFrames[noteID].map(NSStringFromRect) ?? "nil", privacy: .public)"
-            )
             tabFrames.removeValue(forKey: noteID)
             return
         }
-        tabFrameReportCounts[noteID, default: 0] += 1
         guard let screen else { return }
         let converted = panel.convertToScreen(hosting.convert(localFrame, to: nil))
         let frame = stableTabFrame(converted, on: screen)
-        guard tabFrames[noteID] != frame else {
-            duplicateTabFrameReportCounts[noteID, default: 0] += 1
-            return
-        }
+        guard tabFrames[noteID] != frame else { return }
         tabFrames[noteID] = frame
 
         let anchor = NoteWindowAnchor(displayID: displayID, edge: preferences.edge, tabFrame: frame)
         noteWindows.updateAnchors([noteID: anchor], displayID: displayID)
         if pendingOpenNoteIDs.contains(noteID), !isTabExpanded(frame) {
-            deckGeometryLogger.notice("open pending note id=\(noteID.uuidString, privacy: .public) anchor=\(NSStringFromRect(frame), privacy: .public)")
             pendingOpenNoteIDs.remove(noteID)
             noteWindows.open(noteID: noteID, anchor: anchor)
         }
