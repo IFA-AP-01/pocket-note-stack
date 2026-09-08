@@ -243,6 +243,7 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
     private let window: NotePanel
     private let presentation = NoteEditorPresentation()
     private var hosting: FirstMouseHostingView<NoteEditorView>!
+    private var moveSettledWorkItem: DispatchWorkItem?
     private var isClosing = false
     private var currentPinned: Bool?
     private(set) var anchor: NoteWindowAnchor?
@@ -272,7 +273,6 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
         hosting.frame = window.contentView?.bounds ?? .zero
         hosting.autoresizingMask = [.width, .height]
         window.contentView = hosting
-        window.alignCloseButton()
         if let note = model.note(id: noteID) {
             updateWindowAppearance(note: note)
         }
@@ -288,16 +288,16 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
     }
 
     private func presentWindow() {
-        window.level = .statusBar
+        applyWindowLevel()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.alignCloseButton()
         window.orderFrontRegardless()
     }
 
     func closeWindow() {
         guard !isClosing else { return }
         isClosing = true
+        moveSettledWorkItem?.cancel()
         persistFrame()
         window.delegate = nil
         window.orderOut(nil)
@@ -349,7 +349,7 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
     func updateWindowLevel(isPinned: Bool) {
         guard currentPinned != isPinned else { return }
         currentPinned = isPinned
-        window.level = isPinned ? .statusBar : .normal
+        applyWindowLevel()
         window.collectionBehavior = isPinned
             ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             : [.managed]
@@ -391,15 +391,7 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
-        owner.windowDidMove(noteID: noteID, frame: window.frame)
-    }
-
-    fileprivate func windowDragEnded() {
-        alignToBackingPixels()
-        persistFrame()
-        reevaluateAttachment()
-        hosting.needsDisplay = true
-        hosting.displayIfNeeded()
+        scheduleMoveSettled()
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -408,15 +400,16 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        window.level = .statusBar
+        applyWindowLevel()
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        window.level = currentPinned == true ? .statusBar : .normal
+        applyWindowLevel()
     }
 
     func windowWillClose(_ notification: Notification) {
         guard !isClosing else { return }
+        moveSettledWorkItem?.cancel()
         persistFrame()
         owner.windowDidClose(noteID: noteID)
     }
@@ -442,13 +435,13 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
 
     private static func initialFrame(noteID: UUID, preferences: AppPreferences, anchor: NoteWindowAnchor?) -> CGRect {
         let defaults = UserDefaults.standard
+        let size = preferences.noteSize
         if let saved = defaults.string(forKey: "note.window.frame.\(noteID.uuidString)") {
             let frame = NSRectFromString(saved)
             if frame.width > 0, frame.height > 0 {
-                return frame
+                return CGRect(origin: frame.origin, size: size)
             }
         }
-        let size = preferences.noteSize
         let screen = anchor.flatMap { target in
             NSScreen.screens.first { DeckCoordinator.displayID($0) == target.displayID }
         } ?? NSScreen.main
@@ -489,15 +482,20 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
         UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: frameKey)
     }
 
-    private func alignToBackingPixels() {
-        let scale = window.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
-        let alignedOrigin = CGPoint(
-            x: (window.frame.origin.x * scale).rounded() / scale,
-            y: (window.frame.origin.y * scale).rounded() / scale
-        )
-        if alignedOrigin != window.frame.origin {
-            window.setFrameOrigin(alignedOrigin)
+    private func applyWindowLevel() {
+        window.level = currentPinned == true ? .floating : .normal
+    }
+
+    private func scheduleMoveSettled() {
+        moveSettledWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.moveSettledWorkItem = nil
+            self.persistFrame()
+            self.owner.windowDidMove(noteID: self.noteID, frame: self.window.frame)
         }
+        moveSettledWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
     }
 
     private func persistAttachmentState() {
@@ -530,10 +528,9 @@ private final class NoteWindowController: NSObject, NSWindowDelegate {
 }
 
 private final class NotePanel: NSWindow {
-    private var nativeCloseButtonOrigin: CGPoint?
-
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+    override var areCursorRectsEnabled: Bool { true }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if super.performKeyEquivalent(with: event) { return true }
@@ -557,6 +554,15 @@ private final class NotePanel: NSWindow {
         return false
     }
 
+    override func performClose(_ sender: Any?) {
+        guard let controller = delegate as? NoteWindowController else {
+            super.performClose(sender)
+            return
+        }
+        guard !controller.bridge.isDictating else { return }
+        super.performClose(sender)
+    }
+
     init(contentRect: CGRect) {
         super.init(
             contentRect: contentRect,
@@ -574,23 +580,105 @@ private final class NotePanel: NSWindow {
         standardWindowButton(.miniaturizeButton)?.isHidden = true
         standardWindowButton(.zoomButton)?.isHidden = true
         if let closeButton = standardWindowButton(.closeButton) {
-            nativeCloseButtonOrigin = closeButton.frame.origin
+            closeButton.isHidden = false
             alignCloseButton()
+            setupCloseButtonCursor(closeButton)
         }
         hidesOnDeactivate = false
+        acceptsMouseMovedEvents = true
         isMovable = false
         isMovableByWindowBackground = false
         isReleasedWhenClosed = false
-        minSize = CGSize(width: 320, height: 240)
         animationBehavior = .none
     }
 
-    func alignCloseButton() {
-        guard let closeButton = standardWindowButton(.closeButton),
-              let nativeCloseButtonOrigin else { return }
-        closeButton.setFrameOrigin(
-            CGPoint(x: nativeCloseButtonOrigin.x, y: nativeCloseButtonOrigin.y - 3)
+    private func setupCloseButtonCursor(_ button: NSButton) {
+        button.trackingAreas.forEach(button.removeTrackingArea)
+        let area = NSTrackingArea(
+            rect: button.bounds,
+            options: [.cursorUpdate, .mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
         )
+        button.addTrackingArea(area)
+    }
+
+    func alignCloseButton() {
+        guard let closeButton = standardWindowButton(.closeButton) else { return }
+        let targetOrigin = CGPoint(x: 14, y: 4)
+        if closeButton.frame.origin != targetOrigin {
+            closeButton.setFrameOrigin(targetOrigin)
+        }
+    }
+
+    override func layoutIfNeeded() {
+        super.layoutIfNeeded()
+        alignCloseButton()
+    }
+
+    override func setFrame(_ frameRect: NSRect, display displayFlag: Bool) {
+        super.setFrame(frameRect, display: displayFlag)
+        alignCloseButton()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        super.cursorUpdate(with: event)
+        NSCursor.arrow.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let loc = event.locationInWindow
+        if let closeButton = standardWindowButton(.closeButton) {
+            let rect = closeButton.convert(closeButton.bounds, to: nil)
+            if rect.contains(loc) {
+                NSCursor.arrow.set()
+            }
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        NSCursor.arrow.set()
+    }
+}
+
+struct NativeArrowCursorRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> CursorView { CursorView() }
+    func updateNSView(_ nsView: CursorView, context: Context) {}
+
+    final class CursorView: NSView {
+        private var trackingArea: NSTrackingArea?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.invalidateCursorRects(for: self)
+        }
+
+        override func resetCursorRects() {
+            super.resetCursorRects()
+            addCursorRect(bounds, cursor: .arrow)
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            let area = NSTrackingArea(
+                rect: bounds,
+                options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self
+            )
+            addTrackingArea(area)
+            trackingArea = area
+        }
+
+        override func cursorUpdate(with event: NSEvent) { NSCursor.arrow.set() }
+        override func mouseMoved(with event: NSEvent) { NSCursor.arrow.set() }
+        override func mouseEntered(with event: NSEvent) { NSCursor.arrow.set() }
     }
 }
 
@@ -599,15 +687,56 @@ struct NativeWindowDragHandle: NSViewRepresentable {
     func updateNSView(_ nsView: DragHandleView, context: Context) {}
 
     final class DragHandleView: NSView {
+        private var trackingArea: NSTrackingArea?
+
+        override var intrinsicContentSize: NSSize {
+            NSSize(width: 28, height: 24)
+        }
+
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.invalidateCursorRects(for: self)
+        }
+
         override func mouseDown(with event: NSEvent) {
+            NSCursor.closedHand.set()
             window?.performDrag(with: event)
-            (window?.delegate as? NoteWindowController)?.windowDragEnded()
+            if let window {
+                let mouseInView = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+                if mouseInView {
+                    NSCursor.openHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            } else {
+                NSCursor.arrow.set()
+            }
         }
 
         override func resetCursorRects() {
+            super.resetCursorRects()
             addCursorRect(bounds, cursor: .openHand)
         }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            let area = NSTrackingArea(
+                rect: bounds,
+                options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self
+            )
+            addTrackingArea(area)
+            trackingArea = area
+        }
+
+        override func cursorUpdate(with event: NSEvent) { NSCursor.openHand.set() }
+        override func mouseMoved(with event: NSEvent) { NSCursor.openHand.set() }
+        override func mouseEntered(with event: NSEvent) { NSCursor.openHand.set() }
+        override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
     }
 }

@@ -60,7 +60,7 @@ struct NoteEditorView: View {
             HStack(spacing: 8) {
                 Color.clear
                     .frame(width: 14, height: 16)
-                    .allowsHitTesting(false)
+                    .background(NativeArrowCursorRegion())
 
                 TextField("New note", text: $titleDraft)
                     .font(.headline)
@@ -123,25 +123,26 @@ struct NoteEditorView: View {
                     .frame(width: 24, height: 24, alignment: .center)
                 }
                 .buttonStyle(.plain)
+                .background(NativeArrowCursorRegion())
                 .help(dictationState == .idle ? "Start dictation" : "Stop dictation")
 
                 dragHandle
 
-                Button { model.togglePin(id: noteID) } label: {
+                Button {
+                    NSCursor.arrow.set()
+                    model.togglePin(id: noteID)
+                } label: {
                     Image(systemName: note?.isPinned == true ? "pin.fill" : "pin")
                 }
+                .overlay(NativeArrowCursorRegion())
                 .disabled(bridge.isDictating)
                 .help(note?.isPinned == true ? "Unpin window" : "Keep window above other apps")
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .frame(height: 42)
+            .background(NativeArrowCursorRegion())
             .animation(.spring(response: 0.3, dampingFraction: 0.82), value: dictationState != .idle)
-            .onHover { isHovering in
-                if isHovering {
-                    NSCursor.arrow.set()
-                }
-            }
 
             Divider().overlay(palette.accent.opacity(0.45))
 
@@ -220,6 +221,7 @@ struct NoteEditorView: View {
     private var dragHandle: some View {
         ZStack {
             NativeWindowDragHandle()
+                .frame(width: 28, height: 24)
             VStack(spacing: 3) {
                 HStack(spacing: 3) { dot; dot; dot }
                 HStack(spacing: 3) { dot; dot; dot }
