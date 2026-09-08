@@ -96,6 +96,13 @@ final class NotePanel: NSWindow {
 
     override func cursorUpdate(with event: NSEvent) {
         super.cursorUpdate(with: event)
+        if let hit = contentView?.hitTest(event.locationInWindow) {
+            var current: NSView? = hit
+            while let v = current {
+                if v is NativeWindowDragHandle.DragHandleView { return }
+                current = v.superview
+            }
+        }
         NSCursor.arrow.set()
     }
 

@@ -66,11 +66,12 @@ struct NoteEditorView: View {
                     .font(.headline)
                     .lineLimit(1)
                     .textFieldStyle(.plain)
+                    .foregroundStyle(palette.ink)
                     .padding(.horizontal, 7)
                     .frame(minWidth: 80, maxWidth: .infinity, minHeight: 26)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(palette.ink.opacity(titleFocused ? 0.09 : 0.045))
+                            .fill(Color.black.opacity(titleFocused ? 0.09 : 0.045))
                     )
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -141,7 +142,6 @@ struct NoteEditorView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .frame(height: 42)
-            .background(NativeArrowCursorRegion())
             .animation(.spring(response: 0.3, dampingFraction: 0.82), value: dictationState != .idle)
 
             Divider().overlay(palette.accent.opacity(0.45))
@@ -229,7 +229,6 @@ struct NoteEditorView: View {
             .allowsHitTesting(false)
         }
         .frame(width: 28, height: 24)
-        .help("Drag note window")
     }
 
     private var dot: some View {

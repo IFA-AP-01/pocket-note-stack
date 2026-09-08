@@ -34,14 +34,41 @@ struct NativeArrowCursorRegion: NSViewRepresentable {
             trackingArea = area
         }
 
-        override func cursorUpdate(with event: NSEvent) { NSCursor.arrow.set() }
-        override func mouseMoved(with event: NSEvent) { NSCursor.arrow.set() }
-        override func mouseEntered(with event: NSEvent) { NSCursor.arrow.set() }
+        private func isOverCustomCursorView(_ windowLocation: NSPoint) -> Bool {
+            guard let window, let contentView = window.contentView else { return false }
+            var current: NSView? = contentView.hitTest(windowLocation)
+            while let v = current {
+                if v is NativeWindowDragHandle.DragHandleView {
+                    return true
+                }
+                current = v.superview
+            }
+            return false
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            guard !isOverCustomCursorView(event.locationInWindow) else { return }
+            NSCursor.arrow.set()
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            guard !isOverCustomCursorView(event.locationInWindow) else { return }
+            NSCursor.arrow.set()
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            guard !isOverCustomCursorView(event.locationInWindow) else { return }
+            NSCursor.arrow.set()
+        }
     }
 }
 
 struct NativeWindowDragHandle: NSViewRepresentable {
-    func makeNSView(context: Context) -> DragHandleView { DragHandleView() }
+    func makeNSView(context: Context) -> DragHandleView {
+        let view = DragHandleView()
+        view.toolTip = "Drag note window"
+        return view
+    }
     func updateNSView(_ nsView: DragHandleView, context: Context) {}
 
     final class DragHandleView: NSView {
