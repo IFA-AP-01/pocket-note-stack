@@ -1,0 +1,22 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Pocket Stack
+        run: |
+          xcodebuild \
+            -project "Pocket Stack.xcodeproj" \
+            -scheme "Pocket Stack" \
+            -configuration Debug \
+            -destination "platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            build

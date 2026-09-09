@@ -62,7 +62,7 @@ struct SettingsView: View {
                 case .sync:
                     SyncSettingsView()
                 case .about:
-                    AboutSettingsView(preferences: preferences)
+                    AboutSettingsView(updateCoordinator: environment.updateCoordinator)
                 }
             }
             .navigationTitle(selectedSection.title)
@@ -1152,7 +1152,7 @@ private struct SyncSettingsView: View {
 }
 
 private struct AboutSettingsView: View {
-    @Bindable var preferences: AppPreferences
+    @ObservedObject var updateCoordinator: UpdateCoordinator
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
@@ -1189,11 +1189,17 @@ private struct AboutSettingsView: View {
 
             Section("Updates") {
                 Button("Check for Updates…") {
-                    AppEnvironment.shared.updateCoordinator.checkForUpdates()
+                    updateCoordinator.checkForUpdates()
                 }
+                .disabled(!updateCoordinator.canCheckForUpdates)
 
-                Toggle("Automatically check for updates",
-                       isOn: $preferences.updateAutomaticallyChecksForUpdates)
+                Toggle(
+                    "Automatically check for updates",
+                    isOn: Binding(
+                        get: { updateCoordinator.automaticallyChecksForUpdates },
+                        set: updateCoordinator.setAutomaticallyChecksForUpdates
+                    )
+                )
             }
 
             Section("Acknowledgements") {

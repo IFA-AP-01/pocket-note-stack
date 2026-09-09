@@ -40,10 +40,12 @@ private struct PocketStackMenuContent: View {
     let environment: AppEnvironment
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var dictation: DictationCoordinator
+    @ObservedObject private var updateCoordinator: UpdateCoordinator
 
     init(environment: AppEnvironment) {
         self.environment = environment
         self._dictation = ObservedObject(wrappedValue: environment.dictation)
+        self._updateCoordinator = ObservedObject(wrappedValue: environment.updateCoordinator)
     }
 
     var body: some View {
@@ -82,10 +84,13 @@ private struct PocketStackMenuContent: View {
 
         Divider()
 
-        Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath") {
-            environment.updateCoordinator.checkForUpdates()
+        Button(
+            updateCoordinator.updateAvailable ? "Update to \(updateCoordinator.latestVersion)…" : "Check for Updates…",
+            systemImage: "arrow.triangle.2.circlepath"
+        ) {
+            updateCoordinator.checkForUpdates()
         }
-        .disabled(!environment.updateCoordinator.canCheckForUpdates)
+        .disabled(!updateCoordinator.canCheckForUpdates)
 
         Divider()
 

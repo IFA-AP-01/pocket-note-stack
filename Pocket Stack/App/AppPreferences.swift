@@ -35,7 +35,6 @@ final class AppPreferences {
     var openAISpeechLocale: String { didSet { defaults.set(openAISpeechLocale, forKey: "speech.locale.openai") } }
     var microphoneUID: String? { didSet { defaults.set(microphoneUID, forKey: "speech.microphone") } }
     var audioSource: AudioSource { didSet { defaults.set(audioSource.rawValue, forKey: "speech.audioSource") } }
-    var updateAutomaticallyChecksForUpdates: Bool { didSet { defaults.set(updateAutomaticallyChecksForUpdates, forKey: "update.automaticallyChecks") } }
 
     private init() {
         edge = DeckEdge(rawValue: defaults.string(forKey: "deck.edge") ?? "") ?? .right
@@ -65,7 +64,6 @@ final class AppPreferences {
             ?? "auto"
         microphoneUID = defaults.string(forKey: "speech.microphone")
         audioSource = AudioSource(rawValue: defaults.string(forKey: "speech.audioSource") ?? "") ?? .microphone
-        updateAutomaticallyChecksForUpdates = defaults.object(forKey: "update.automaticallyChecks") as? Bool ?? false
         if appleSpeechLocale.isEmpty || appleSpeechLocale == "auto" {
             appleSpeechLocale = Locale.current.identifier
         }

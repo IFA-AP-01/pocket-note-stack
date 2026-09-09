@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6CEDDE83305115A800E0BAA5 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C64B5293046758A003B51BA /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		6C64B50C3046758A003B51BA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -30,9 +34,22 @@
 		6C64B5283046758A003B51BA /* Sparkle */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Sparkle; path = SourcePackages/checkouts/Sparkle; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6CEDDF273051535B00E0BAA5 /* Exceptions for "Pocket Stack" folder in "Pocket Stack" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Pocket-Stack-Info.plist",
+			);
+			target = 6C64B4FB30467589003B51BA /* Pocket Stack */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6C64B4FE30467589003B51BA /* Pocket Stack */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6CEDDF273051535B00E0BAA5 /* Exceptions for "Pocket Stack" folder in "Pocket Stack" target */,
+			);
 			path = "Pocket Stack";
 			sourceTree = "<group>";
 		};
@@ -53,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6CEDDE83305115A800E0BAA5 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -198,13 +216,13 @@
 			);
 			mainGroup = 6C64B4F330467589003B51BA;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6C64B52A3046758A003B51BA /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6C64B4FD30467589003B51BA /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			packageReferences = (
-				6C64B52A3046758A003B51BA /* XCRemoteSwiftPackageReference "Sparkle" */,
-			);
 			targets = (
 				6C64B4FB30467589003B51BA /* Pocket Stack */,
 				6C64B50A30467589003B51BA /* Pocket StackTests */,
@@ -401,6 +419,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Pocket Stack/Pocket Stack.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -410,6 +429,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Pocket-Stack-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Pocket Note Stack";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -423,6 +443,7 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ifateam.Pocket-Stack";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -438,6 +459,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Pocket Stack/Pocket Stack.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -447,6 +469,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Pocket-Stack-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Pocket Note Stack";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -460,6 +483,7 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ifateam.Pocket-Stack";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -595,8 +619,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.9.6;
+				kind = exactVersion;
+				version = 2.9.6;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
