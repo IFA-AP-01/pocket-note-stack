@@ -60,3 +60,12 @@ Pocket Stack runs as an accessory utility (`LSUIElement = YES`):
 - **Entitlements:** Sandboxing is enabled under `Pocket Stack/Pocket Stack.entitlements`.
 - **Microphone Access:** Microphone usage description is defined in `Pocket-Stack-Info.plist` for audio dictation.
 - **Developer ID & Notarization:** Production builds should retain sandbox entitlements, use a hardened runtime, and be notarized using `xcrun notarytool`.
+
+### Local release packaging
+
+`scripts/release-from-archive.sh` produces two distribution artifacts:
+
+- `Pocket-Stack-<version>.zip` is signed with Sparkle's EdDSA key and is used only by the automatic update feed.
+- `Pocket-Stack-<version>.dmg` is the branded drag-to-Applications installer published for new downloads. The DMG and the app inside it are both signed, notarized, and stapled before upload.
+
+DMG packaging requires `create-dmg` 1.2.3 or newer. Install it with `brew install create-dmg`, then run the release script from a logged-in macOS GUI session. The first run may ask for permission to let the terminal control Finder; that permission is required to apply the custom background and icon layout.

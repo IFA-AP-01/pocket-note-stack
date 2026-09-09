@@ -23,8 +23,11 @@ Options:
 Release notes are always read from .github/RELEASE_NOTES.md. GitHub Actions
 creates the matching draft Release after a successful build. Unless --archive
 is provided, this script first creates a fresh Release archive. It then adds the
-signed update archive, publishes the Sparkle files to R2, and publishes the
-GitHub Release.
+signed Sparkle update archive and a branded, notarized drag-install DMG,
+publishes the Sparkle files to R2, and publishes the GitHub Release.
+
+DMG packaging requires create-dmg 1.2.3 or newer and a logged-in macOS GUI
+session with permission to control Finder.
 
 Apple notarization reads POCKET_STACK_NOTARY_ISSUER_ID,
 POCKET_STACK_NOTARY_KEY_ID, and POCKET_STACK_NOTARY_KEY_PATH from
@@ -48,6 +51,7 @@ script_dir="${0:A:h}"
 repo_root="${script_dir:h}"
 release_notes_path="${repo_root}/.github/RELEASE_NOTES.md"
 environment_config_path="${repo_root}/Config/Environment.xcconfig"
+dmg_background_path="${repo_root}/assets/dmg-background.png"
 r2_bucket="pocketstack-downloads"
 
 read_xcconfig_value() {
@@ -116,6 +120,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -f "$release_notes_path" ]] || fail ".github/RELEASE_NOTES.md is missing"
+[[ -f "$dmg_background_path" ]] || fail "DMG background is missing: ${dmg_background_path}"
+
+create_dmg_path=$(command -v create-dmg 2>/dev/null || true)
+[[ -x "$create_dmg_path" ]] \
+    || fail "create-dmg 1.2.3 or newer was not found in PATH; install it with 'brew install create-dmg'"
+create_dmg_version=$("$create_dmg_path" --version 2>/dev/null | /usr/bin/awk '/^create-dmg / { print $2; exit }')
+[[ -n "$create_dmg_version" ]] || fail "could not determine the installed create-dmg version"
+autoload -Uz is-at-least
+is-at-least 1.2.3 "$create_dmg_version" \
+    || fail "create-dmg 1.2.3 or newer is required; found ${create_dmg_version}"
+
+[[ -n "$notary_issuer_id" && "$notary_issuer_id" != YOUR_ISSUER_ID ]] \
+    || fail "set POCKET_STACK_NOTARY_ISSUER_ID in Config/Environment.xcconfig"
+[[ -n "$notary_key_id" && "$notary_key_id" != YOUR_KEY_ID ]] \
+    || fail "set POCKET_STACK_NOTARY_KEY_ID in Config/Environment.xcconfig"
+[[ -f "$notary_key_path" && "$notary_key_path" == *.p8 ]] \
+    || fail "POCKET_STACK_NOTARY_KEY_PATH must point to an existing .p8 file"
 
 wrangler_path=$(command -v wrangler 2>/dev/null || true)
 [[ -x "$wrangler_path" ]] || fail "Wrangler was not found in PATH; install Wrangler 4 or newer"
@@ -177,6 +198,25 @@ build_version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundl
 [[ -n "$team_id" ]] || fail "the archive does not contain an Apple Developer Team ID"
 [[ -n "$short_version" ]] || fail "the archive does not contain a marketing version"
 [[ -n "$build_version" ]] || fail "the archive does not contain a build version"
+
+dmg_signing_identity_output=$(
+    /usr/bin/security find-identity -v -p codesigning 2>/dev/null \
+        | /usr/bin/awk -v team_id="$team_id" '
+            index($0, "\"Developer ID Application:") && index($0, "(" team_id ")") {
+                identity = $0
+                sub(/^[^"]*"/, "", identity)
+                sub(/"[^"]*$/, "", identity)
+                print identity
+            }
+        '
+)
+[[ -n "$dmg_signing_identity_output" ]] \
+    || fail "no Developer ID Application certificate for Team ${team_id} was found in the Keychain"
+dmg_signing_identities=("${(@f)dmg_signing_identity_output}")
+if (( ${#dmg_signing_identities[@]} > 1 )); then
+    fail "multiple Developer ID Application certificates for Team ${team_id} were found in the Keychain"
+fi
+dmg_signing_identity="${dmg_signing_identities[1]}"
 
 release_notes_title=$(/usr/bin/sed -n '/[^[:space:]]/{p;q;}' "$release_notes_path")
 [[ "$release_notes_title" == "# Pocket Stack ${short_version}" ]] \
@@ -249,13 +289,6 @@ if [[ -n "$accepted_submission_app" ]]; then
     /bin/mkdir -p "$export_dir"
     /usr/bin/ditto "$accepted_submission_app" "$exported_app_path"
 else
-    [[ -n "$notary_issuer_id" && "$notary_issuer_id" != YOUR_ISSUER_ID ]] \
-        || fail "set POCKET_STACK_NOTARY_ISSUER_ID in Config/Environment.xcconfig"
-    [[ -n "$notary_key_id" && "$notary_key_id" != YOUR_KEY_ID ]] \
-        || fail "set POCKET_STACK_NOTARY_KEY_ID in Config/Environment.xcconfig"
-    [[ -f "$notary_key_path" && "$notary_key_path" == *.p8 ]] \
-        || fail "POCKET_STACK_NOTARY_KEY_PATH must point to an existing .p8 file"
-
     /usr/bin/plutil -create xml1 "$export_options_path"
     /usr/bin/plutil -insert method -string developer-id "$export_options_path"
     /usr/bin/plutil -insert destination -string export "$export_options_path"
@@ -301,6 +334,62 @@ echo "Verifying the final app..."
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$exported_app_path"
 /usr/bin/xcrun stapler validate "$exported_app_path"
 
+dmg_name="Pocket-Stack-${short_version}.dmg"
+dmg_output_path="${export_dir}/${dmg_name}"
+dmg_staging_path="${temporary_dir}/dmg"
+/bin/mkdir -p "$dmg_staging_path"
+/usr/bin/ditto "$exported_app_path" "${dmg_staging_path}/${app_name}"
+
+volume_icon_path="${exported_app_path}/Contents/Resources/AppIcon.icns"
+[[ -f "$volume_icon_path" ]] || fail "DMG volume icon was not found at ${volume_icon_path}"
+
+echo "Creating ${dmg_name}..."
+"$create_dmg_path" \
+    --volname "Pocket Stack" \
+    --volicon "$volume_icon_path" \
+    --background "$dmg_background_path" \
+    --window-pos 200 120 \
+    --window-size 560 460 \
+    --text-size 13 \
+    --icon-size 128 \
+    --icon "$app_name" 145 275 \
+    --hide-extension "$app_name" \
+    --app-drop-link 415 275 \
+    --filesystem HFS+ \
+    --format UDZO \
+    --no-internet-enable \
+    --codesign "$dmg_signing_identity" \
+    "$dmg_output_path" \
+    "$dmg_staging_path"
+[[ -f "$dmg_output_path" ]] || fail "DMG was not created at ${dmg_output_path}"
+
+echo "Verifying and notarizing ${dmg_name}..."
+/usr/bin/hdiutil verify "$dmg_output_path"
+/usr/bin/codesign --verify --verbose=2 "$dmg_output_path"
+
+dmg_notarization_result_path="${temporary_dir}/dmg-notarization-result.plist"
+/usr/bin/xcrun notarytool submit "$dmg_output_path" \
+    --issuer "$notary_issuer_id" \
+    --key-id "$notary_key_id" \
+    --key "$notary_key_path" \
+    --wait \
+    --timeout 1h \
+    --output-format plist > "$dmg_notarization_result_path"
+
+dmg_notarization_status=$(/usr/bin/plutil -extract status raw "$dmg_notarization_result_path")
+if [[ "$dmg_notarization_status" != "Accepted" ]]; then
+    /usr/bin/plutil -p "$dmg_notarization_result_path" >&2
+    fail "Apple DMG notarization status was ${dmg_notarization_status}"
+fi
+
+/usr/bin/xcrun stapler staple "$dmg_output_path"
+/usr/bin/xcrun stapler validate "$dmg_output_path"
+/usr/sbin/spctl --assess \
+    --type open \
+    --context context:primary-signature \
+    --verbose=4 \
+    "$dmg_output_path"
+
 download_url_prefix="${public_base_url}/releases/"
 package_arguments=(
     --app "$exported_app_path"
@@ -320,19 +409,30 @@ archive_name="Pocket-Stack-${short_version}.zip"
 archive_output_path="${archives_dir}/${archive_name}"
 appcast_output_path="${archives_dir}/appcast.xml"
 archive_object_key="releases/${archive_name}"
+dmg_object_key="releases/${dmg_name}"
 
 [[ -f "$archive_output_path" ]] || fail "Sparkle archive was not created at ${archive_output_path}"
 [[ -f "$appcast_output_path" ]] || fail "appcast.xml was not created at ${appcast_output_path}"
 
 echo
-echo "Uploading the signed archive to GitHub Release ${release_tag}..."
-"$gh_path" release upload "$release_tag" "$archive_output_path" \
-    --repo "$github_repository"
+echo "Uploading the ZIP and DMG to GitHub Release ${release_tag}..."
+"$gh_path" release upload "$release_tag" \
+    "$archive_output_path" \
+    "$dmg_output_path" \
+    --repo "$github_repository" \
+    --clobber
 
 echo "Uploading the immutable update archive to Cloudflare R2..."
 "$wrangler_path" r2 object put "${r2_bucket}/${archive_object_key}" \
     --file "$archive_output_path" \
     --content-type "application/zip" \
+    --cache-control "public, max-age=31536000, immutable" \
+    --remote
+
+echo "Uploading the DMG to Cloudflare R2..."
+"$wrangler_path" r2 object put "${r2_bucket}/${dmg_object_key}" \
+    --file "$dmg_output_path" \
+    --content-type "application/x-apple-diskimage" \
     --cache-control "public, max-age=31536000, immutable" \
     --remote
 
@@ -354,4 +454,5 @@ echo "Updating and publishing GitHub Release ${release_tag}..."
 echo
 echo "Release ${release_tag} published to Cloudflare R2 and GitHub."
 echo "Update: ${public_base_url}/${archive_object_key}"
+echo "DMG: ${public_base_url}/${dmg_object_key}"
 echo "Appcast: ${public_base_url}/appcast.xml"

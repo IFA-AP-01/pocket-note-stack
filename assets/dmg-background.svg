@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="460" viewBox="0 0 560 460">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffdf4"/>
+      <stop offset="1" stop-color="#f6f4e9"/>
+    </linearGradient>
+    <radialGradient id="yellowGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffe889" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#ffe889" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="purpleGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#b9a4ff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#b9a4ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-25%" y="-40%" width="150%" height="180%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#756631" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <rect width="560" height="460" fill="url(#background)"/>
+  <ellipse cx="82" cy="58" rx="214" ry="184" fill="url(#yellowGlow)"/>
+  <ellipse cx="522" cy="420" rx="234" ry="202" fill="url(#purpleGlow)"/>
+
+  <text x="280" y="60" text-anchor="middle" font-family="Noteworthy, Marker Felt, cursive" font-size="31" font-weight="700" letter-spacing="0.4" fill="#332f24">Pocket Stack</text>
+  <text x="280" y="94" text-anchor="middle" font-family="Marker Felt, Noteworthy, cursive" font-size="17" font-weight="400" letter-spacing="0.15" fill="#716b5c">Drag Pocket Stack to Applications</text>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)">
+    <path d="M222 282 C246 224 288 229 317 267 C331 285 346 279 359 254" stroke="#aa92ed" stroke-width="7" stroke-opacity="0.28"/>
+    <path d="M220 276 C245 220 286 226 316 263 C330 280 344 274 357 250" stroke="#b89429" stroke-width="4.5"/>
+    <path d="M337 253 C346 253 352 252 357 250 C356 258 355 266 350 273" stroke="#b89429" stroke-width="4.5"/>
+  </g>
+
+  <g fill="#b89429" opacity="0.75">
+    <circle cx="236" cy="235" r="3"/>
+    <circle cx="330" cy="235" r="2.5"/>
+    <path d="M366 220 l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/>
+  </g>
+</svg>
