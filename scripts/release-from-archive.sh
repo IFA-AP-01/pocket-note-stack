@@ -212,7 +212,8 @@ else
     echo "Found published GitHub Release ${release_tag}."
 fi
 
-export_dir="${export_root}/${short_version}-${build_version}"
+export_run_id="$(/bin/date '+%Y%m%d-%H%M%S')-$$"
+export_dir="${export_root}/${short_version}-${build_version}-${export_run_id}"
 [[ ! -e "$export_dir" ]] || fail "export directory already exists: ${export_dir}"
 /bin/mkdir -p "$export_root"
 
