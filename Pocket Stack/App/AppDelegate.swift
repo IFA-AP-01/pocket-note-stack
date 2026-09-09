@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         environment.deckCoordinator.start()
         environment.undoToast.start()
+        environment.updateCoordinator.start()
         HotKeyManager.shared.onNewNote = { [weak self] in self?.newNote() }
         HotKeyManager.shared.onAllNotes = { [weak self] in self?.openAllNotes() }
         HotKeyManager.shared.onArchive = { [weak self] in self?.openArchive() }
@@ -43,6 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         environment.noteWindows.stopDictation()
     }
 
+    @objc func checkForUpdates() {
+        environment.updateCoordinator.checkForUpdates()
+    }
+
     private func buildMainMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()
@@ -61,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add("Pocket Stack Archive…", #selector(exportArchive), "", [], to: exportMenu)
         export.submenu = exportMenu; appMenu.addItem(export)
         appMenu.addItem(.separator())
+        add("Check for Updates…", #selector(checkForUpdates), "", [], to: appMenu)
         appMenu.addItem(withTitle: "Quit Pocket Stack", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu; main.addItem(appItem)
 

@@ -27,6 +27,7 @@
 		6C64B4FC30467589003B51BA /* Pocket Stack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pocket Stack.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C64B50B3046758A003B51BA /* Pocket StackTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Pocket StackTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C64B5153046758A003B51BA /* Pocket StackUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Pocket StackUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6C64B5283046758A003B51BA /* Sparkle */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Sparkle; path = SourcePackages/checkouts/Sparkle; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +80,7 @@
 				6C64B50E3046758A003B51BA /* Pocket StackTests */,
 				6C64B5183046758A003B51BA /* Pocket StackUITests */,
 				6C64B4FD30467589003B51BA /* Products */,
+				6C64B5283046758A003B51BA /* Sparkle */,
 			);
 			sourceTree = "<group>";
 		};
@@ -111,6 +113,9 @@
 				6C64B4FE30467589003B51BA /* Pocket Stack */,
 			);
 			name = "Pocket Stack";
+			packageProductDependencies = (
+				6C64B5293046758A003B51BA /* Sparkle */,
+			);
 			productName = "Pocket Stack";
 			productReference = 6C64B4FC30467589003B51BA /* Pocket Stack.app */;
 			productType = "com.apple.product-type.application";
@@ -197,6 +202,9 @@
 			productRefGroup = 6C64B4FD30467589003B51BA /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				6C64B52A3046758A003B51BA /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			targets = (
 				6C64B4FB30467589003B51BA /* Pocket Stack */,
 				6C64B50A30467589003B51BA /* Pocket StackTests */,
@@ -581,6 +589,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6C64B52A3046758A003B51BA /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6C64B5293046758A003B51BA /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6C64B52A3046758A003B51BA /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6C64B4F430467589003B51BA /* Project object */;
 }

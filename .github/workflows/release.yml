@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate tag matches MARKETING_VERSION
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          MARKETING_VERSION=$(xcodebuild -showBuildSettings -json | jq -r '.[] | select(.target == "Pocket Stack") | .buildSettings.MARKETING_VERSION')
+          if [ "$TAG_VERSION" != "$MARKETING_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match MARKETING_VERSION ($MARKETING_VERSION)"
+            exit 1
+          fi
+
+      - name: Validate CURRENT_PROJECT_VERSION is integer
+        run: |
+          BUILD_NUMBER=$(xcodebuild -showBuildSettings -json | jq -r '.[] | select(.target == "Pocket Stack") | .buildSettings.CURRENT_PROJECT_VERSION')
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "Error: CURRENT_PROJECT_VERSION ($BUILD_NUMBER) must be an integer"
+            exit 1
+          fi
+
+      - name: Build Release
+        run: |
+          xcodebuild archive \
+            -scheme "Pocket Stack" \
+            -configuration Release \
+            -archivePath build/PocketStack.xcarchive \
+            -destination "generic/platform=macOS" \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            CODE_SIGN_STYLE=Manual
+
+      - name: Export Archive
+        run: |
+          cat > ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>developer-id</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>signingCertificate</key>
+              <string>Developer ID Application</string>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath build/PocketStack.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath build/export
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "Pocket Stack" \
+            -srcfolder build/export/Pocket\ Stack.app \
+            -ov -format UDZO \
+            "Pocket Stack-${GITHUB_REF#refs/tags/v}.dmg"
+
+      - name: Create ZIP for Sparkle
+        run: |
+          cd build/export
+          zip -r "../Pocket Stack-${GITHUB_REF#refs/tags/v}.zip" "Pocket Stack.app"
+
+      - name: Generate Appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          echo "$SPARKLE_ED_PRIVATE_KEY" | generate_appcast \
+            --ed-key-file /dev/stdin \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF#refs/tags/}/" \
+            --release-notes-url-prefix "https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF#refs/tags/}/" \
+            build/appcast.xml
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Pocket Stack-${GITHUB_REF#refs/tags/v}.dmg
+            Pocket Stack-${GITHUB_REF#refs/tags/v}.zip
+            build/appcast.xml
+          body_path: RELEASE_NOTES.md

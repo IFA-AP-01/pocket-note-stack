@@ -82,6 +82,13 @@ private struct PocketStackMenuContent: View {
 
         Divider()
 
+        Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath") {
+            environment.updateCoordinator.checkForUpdates()
+        }
+        .disabled(!environment.updateCoordinator.canCheckForUpdates)
+
+        Divider()
+
         Button("Quit Pocket Stack", systemImage: "power") {
             NSApp.terminate(nil)
         }

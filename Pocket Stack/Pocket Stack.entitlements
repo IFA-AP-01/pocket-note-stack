@@ -10,5 +10,10 @@
     <true/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>com.ifateam.Pocket-Stack-spks</string>
+        <string>com.ifateam.Pocket-Stack-spki</string>
+    </array>
 </dict>
 </plist>

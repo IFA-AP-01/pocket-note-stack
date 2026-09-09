@@ -1186,6 +1186,15 @@ private struct AboutSettingsView: View {
                 .padding(.vertical, 8)
             }
 
+            Section("Updates") {
+                Button("Check for Updates…") {
+                    AppEnvironment.shared.updateCoordinator.checkForUpdates()
+                }
+
+                Toggle("Automatically check for updates",
+                       isOn: AppEnvironment.shared.updateCoordinator.$automaticallyChecksForUpdates)
+            }
+
             Section("Acknowledgements") {
                 ScrollView {
                     Text(notices)

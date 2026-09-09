@@ -11,6 +11,7 @@ final class AppEnvironment {
     let deckCoordinator: DeckCoordinator
     let libraryWindow: LibraryWindowController
     let undoToast: UndoToastController
+    let updateCoordinator: UpdateCoordinator
 
     private init() {
         preferences = .shared
@@ -22,6 +23,7 @@ final class AppEnvironment {
         deckCoordinator = DeckCoordinator(model: model, preferences: preferences, noteWindows: noteWindows)
         libraryWindow = LibraryWindowController(model: model)
         undoToast = UndoToastController(model: model)
+        updateCoordinator = UpdateCoordinator()
         noteWindows.deckCoordinator = deckCoordinator
     }
 }
