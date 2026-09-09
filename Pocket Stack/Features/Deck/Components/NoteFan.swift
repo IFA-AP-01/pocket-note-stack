@@ -85,22 +85,17 @@ struct NoteFan: View {
     }
 
     private func fanLayout<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        (edge == .bottom
-            ? AnyLayout(HStackLayout(alignment: .bottom, spacing: DeckMetrics.Fan.layoutSpacing))
-            : AnyLayout(VStackLayout(alignment: edge == .right ? .trailing : .leading, spacing: DeckMetrics.Fan.layoutSpacing))
-        ) {
+        (edge.stackLayout(spacing: DeckMetrics.Fan.layoutSpacing)) {
             content()
         }
     }
 
     private var tabs: some View {
-        (edge == .bottom
-            ? AnyLayout(HStackLayout(alignment: .bottom, spacing: style == .labelled ? DeckMetrics.Fan.tabSpacingLabelled : DeckMetrics.Fan.tabSpacingUnlabelled))
-            : AnyLayout(VStackLayout(
-                    alignment: edge == .right ? .trailing : .leading,
-                    spacing: style == .labelled ? DeckMetrics.Fan.tabSpacingLabelled : DeckMetrics.Fan.tabSpacingUnlabelled
-                ))
-        ) {
+        (edge.stackLayout(
+            spacing: style == .labelled
+                ? DeckMetrics.Fan.tabSpacingLabelled
+                : DeckMetrics.Fan.tabSpacingUnlabelled
+        )) {
             if notes.isEmpty {
                 EmptyNoteTab(edge: edge, action: onCreate)
                     .staged(index: 0, revealed: revealed, edge: edge)
@@ -129,7 +124,11 @@ struct NoteFan: View {
                     onReorder(source, note.id)
                     return true
                 }
-                .zIndex(hoveredID == note.id ? 500 : Double(index))
+                .zIndex(
+                    hoveredID == note.id
+                        ? Double(notes.count + 1)
+                        : edge.stackZIndex(for: index, count: notes.count)
+                )
                 .staged(index: index + (hasNavigation ? 1 : 0), revealed: revealed, edge: edge)
             }
         }

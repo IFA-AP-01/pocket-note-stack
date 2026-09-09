@@ -52,6 +52,7 @@ struct EmptyNoteTab: View {
     var body: some View {
         Button("NEW NOTE", action: action)
             .font(.system(size: DeckMetrics.EmptyTab.fontSize, weight: .semibold))
+            .foregroundStyle(Color.black.opacity(0.56))
             .frame(width: edge == .bottom ? DeckMetrics.EmptyTab.length : DeckMetrics.EmptyTab.depth, height: edge == .bottom ? DeckMetrics.EmptyTab.depth : DeckMetrics.EmptyTab.length)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DeckMetrics.EmptyTab.cornerRadius))
             .buttonStyle(.plain)

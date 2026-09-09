@@ -19,8 +19,23 @@ struct NoteTab: View {
     private var palette: NotePaletteColor { NotePalette.color(for: note) }
     private var isExpanded: Bool { isPreviewed && !isOpen }
     private var closedDepth: CGFloat { labelled ? DeckMetrics.Tab.closedDepthLabelled : DeckMetrics.Tab.closedDepthUnlabelled }
-    private var closedLength: CGFloat { labelled ? DeckMetrics.Tab.closedLengthLabelled : DeckMetrics.Tab.closedLengthUnlabelled }
+    private var closedLength: CGFloat {
+        labelled
+            ? DeckMetrics.Tab.closedLengthLabelled(on: edge.mainAxis)
+            : DeckMetrics.Tab.closedLengthUnlabelled
+    }
     private var hoverDepth: CGFloat { closedDepth + (isHovered && !isOpen && !isExpanded ? DeckMetrics.Tab.hoverDepthIncrease : 0) }
+    private var closedSize: CGSize { edge.mainAxis.size(length: closedLength, depth: hoverDepth) }
+    private var previewSize: CGSize { DeckMetrics.Tab.previewSize }
+    private var titleStripLength: CGFloat {
+        edge.mainAxis.length(of: isExpanded ? previewSize : closedSize)
+    }
+    private var closedContentSize: CGSize {
+        edge.mainAxis.size(
+            length: DeckMetrics.Tab.closedContentLength,
+            depth: DeckMetrics.Tab.closedContentThickness
+        )
+    }
 
     var body: some View {
         Button(action: action) {
@@ -37,11 +52,11 @@ struct NoteTab: View {
                         y: edge.shadowOffset.height
                     )
 
-                if isExpanded { previewContent } else { closedContent }
+                tabContent
             }
             .frame(
-                width: isExpanded ? DeckMetrics.Tab.expandedWidth : (edge == .bottom ? closedLength : hoverDepth),
-                height: isExpanded ? DeckMetrics.Tab.expandedHeight : (edge == .bottom ? hoverDepth : closedLength),
+                width: isExpanded ? previewSize.width : closedSize.width,
+                height: isExpanded ? previewSize.height : closedSize.height,
                 alignment: edge.rootAlignment
             )
             .contentShape(Rectangle())
@@ -82,7 +97,37 @@ struct NoteTab: View {
         } else {
             RoundedRectangle(cornerRadius: DeckMetrics.Tab.closedContentCornerRadius)
                 .fill(palette.accent)
-                .frame(width: edge == .bottom ? DeckMetrics.Tab.closedContentLength : DeckMetrics.Tab.closedContentThickness, height: edge == .bottom ? DeckMetrics.Tab.closedContentThickness : DeckMetrics.Tab.closedContentLength)
+                .frame(width: closedContentSize.width, height: closedContentSize.height)
+        }
+    }
+
+    @ViewBuilder private var tabContent: some View {
+        if labelled {
+            labelledContent
+        } else if isExpanded {
+            previewContent
+        } else {
+            closedContent
+        }
+    }
+
+    @ViewBuilder private var labelledContent: some View {
+        switch edge {
+        case .left:
+            HStack(spacing: 0) {
+                titleStrip
+                if isExpanded { verticalDivider; mainContent.transition(.opacity) }
+            }
+        case .right:
+            HStack(spacing: 0) {
+                if isExpanded { mainContent.transition(.opacity); verticalDivider }
+                titleStrip
+            }
+        case .bottom:
+            VStack(spacing: 0) {
+                if isExpanded { mainContent.transition(.opacity); horizontalDivider }
+                titleStrip
+            }
         }
     }
 
@@ -101,21 +146,37 @@ struct NoteTab: View {
         if labelled {
             titleStrip
         } else {
-            palette.accent
-                .frame(width: edge == .bottom ? nil : DeckMetrics.Tab.previewStripThickness, height: edge == .bottom ? DeckMetrics.Tab.previewStripThickness : nil)
+            switch edge.mainAxis {
+            case .horizontal:
+                palette.accent.frame(height: DeckMetrics.Tab.previewStripThickness)
+            case .vertical:
+                palette.accent.frame(width: DeckMetrics.Tab.previewStripThickness)
+            }
         }
     }
 
     private var titleStrip: some View {
         Group {
-            if edge == .bottom {
-                Text(note.displayTitle.uppercased())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Text(note.displayTitle.uppercased())
-                    .frame(width: DeckMetrics.Tab.verticalTitleLength, height: DeckMetrics.Tab.closedDepthLabelled)
-                    .rotationEffect(.degrees(edge == .right ? -90 : 90))
-                    .frame(width: DeckMetrics.Tab.closedDepthLabelled, height: DeckMetrics.Tab.closedLengthLabelled)
+            switch edge.mainAxis {
+            case .horizontal:
+                titleText
+                    .frame(
+                        width: titleStripLength,
+                        height: DeckMetrics.Tab.closedDepthLabelled,
+                        alignment: edge.stackVisibleAlignment
+                    )
+            case .vertical:
+                titleText
+                    .rotationEffect(edge.titleRotation)
+                    .frame(
+                        width: DeckMetrics.Tab.closedDepthLabelled,
+                        height: DeckMetrics.Tab.exposedLengthLabelled
+                    )
+                    .frame(
+                        width: DeckMetrics.Tab.closedDepthLabelled,
+                        height: titleStripLength,
+                        alignment: edge.stackVisibleAlignment
+                    )
                     .clipped()
             }
         }
@@ -124,25 +185,34 @@ struct NoteTab: View {
         .foregroundStyle(palette.ink.opacity(0.86))
         .lineLimit(1)
         .truncationMode(.tail)
-        .frame(width: edge == .bottom ? nil : DeckMetrics.Tab.closedDepthLabelled, height: edge == .bottom ? DeckMetrics.Tab.closedDepthLabelled : nil)
+    }
+
+    private var titleText: some View {
+        Text(note.displayTitle.uppercased())
+            .padding(.horizontal, DeckMetrics.Tab.titleInset)
+            .frame(
+                width: DeckMetrics.Tab.exposedLengthLabelled,
+                height: DeckMetrics.Tab.closedDepthLabelled,
+                alignment: .leading
+            )
     }
 
     private var verticalDivider: some View {
         Path { path in
             path.move(to: .zero)
-            path.addLine(to: CGPoint(x: 0, y: DeckMetrics.Tab.expandedHeight))
+            path.addLine(to: CGPoint(x: 0, y: previewSize.height))
         }
         .stroke(palette.ink.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-        .frame(width: 1, height: DeckMetrics.Tab.expandedHeight)
+        .frame(width: 1, height: previewSize.height)
     }
 
     private var horizontalDivider: some View {
         Path { path in
             path.move(to: .zero)
-            path.addLine(to: CGPoint(x: DeckMetrics.Tab.expandedWidth, y: 0))
+            path.addLine(to: CGPoint(x: previewSize.width, y: 0))
         }
         .stroke(palette.ink.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-        .frame(width: DeckMetrics.Tab.expandedWidth, height: 1)
+        .frame(width: previewSize.width, height: 1)
     }
 
     private var mainContent: some View {

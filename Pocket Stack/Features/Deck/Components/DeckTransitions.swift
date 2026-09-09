@@ -47,7 +47,115 @@ struct TabPressButtonStyle: ButtonStyle {
     }
 }
 
+enum DeckMainAxis {
+    case horizontal
+    case vertical
+
+    func size(length: CGFloat, depth: CGFloat) -> CGSize {
+        switch self {
+        case .horizontal:
+            CGSize(width: length, height: depth)
+        case .vertical:
+            CGSize(width: depth, height: length)
+        }
+    }
+
+    func depth(of size: CGSize) -> CGFloat {
+        switch self {
+        case .horizontal:
+            size.height
+        case .vertical:
+            size.width
+        }
+    }
+
+    func length(of size: CGSize) -> CGFloat {
+        switch self {
+        case .horizontal:
+            size.width
+        case .vertical:
+            size.height
+        }
+    }
+
+}
+
+enum DeckStackOrder {
+    case higherIndexOnTop
+    case lowerIndexOnTop
+
+    func zIndex(for index: Int, count: Int) -> Double {
+        switch self {
+        case .higherIndexOnTop:
+            Double(index)
+        case .lowerIndexOnTop:
+            Double(count - index)
+        }
+    }
+
+    func visibleAlignment(on axis: DeckMainAxis) -> Alignment {
+        switch (axis, self) {
+        case (.horizontal, .higherIndexOnTop):
+            .leading
+        case (.horizontal, .lowerIndexOnTop):
+            .trailing
+        case (.vertical, .higherIndexOnTop):
+            .top
+        case (.vertical, .lowerIndexOnTop):
+            .bottom
+        }
+    }
+}
+
 extension DeckEdge {
+    var mainAxis: DeckMainAxis {
+        switch self {
+        case .bottom:
+            .horizontal
+        case .left, .right:
+            .vertical
+        }
+    }
+
+    var stackOrder: DeckStackOrder {
+        switch self {
+        case .left, .bottom:
+            .higherIndexOnTop
+        case .right:
+            .lowerIndexOnTop
+        }
+    }
+
+    var stackVisibleAlignment: Alignment {
+        stackOrder.visibleAlignment(on: mainAxis)
+    }
+
+    var titleRotation: Angle {
+        switch self {
+        case .left:
+            .degrees(90)
+        case .right:
+            .degrees(-90)
+        case .bottom:
+            .zero
+        }
+    }
+
+    func stackZIndex(for index: Int, count: Int) -> Double {
+        stackOrder.zIndex(for: index, count: count)
+    }
+
+    func stackLayout(spacing: CGFloat) -> AnyLayout {
+        switch self {
+        case .left:
+            AnyLayout(VStackLayout(alignment: .leading, spacing: spacing))
+        case .right:
+            AnyLayout(VStackLayout(alignment: .trailing, spacing: spacing))
+        case .bottom:
+            AnyLayout(HStackLayout(alignment: .bottom, spacing: spacing))
+        }
+    }
+
     var rootAlignment: Alignment {
         switch self {
         case .left: .leading

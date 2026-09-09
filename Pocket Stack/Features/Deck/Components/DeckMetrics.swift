@@ -19,16 +19,23 @@ enum DeckMetrics {
     enum Fan {
         static let crossAxisSize: CGFloat = 36
         static let layoutSpacing: CGFloat = 10
-        static let tabSpacingLabelled: CGFloat = -40
+        static var tabSpacingLabelled: CGFloat {
+            Tab.exposedLengthLabelled - Tab.closedLengthLabelled(on: .horizontal)
+        }
         static let tabSpacingUnlabelled: CGFloat = 6
     }
 
     enum Tab {
         static let closedDepthLabelled: CGFloat = 36
         static let closedDepthUnlabelled: CGFloat = 20
-        static let closedLengthLabelled: CGFloat = 150
+        static func closedLengthLabelled(on axis: DeckMainAxis) -> CGFloat {
+            switch axis {
+            case .horizontal: 220
+            case .vertical: 160
+            }
+        }
         static let closedLengthUnlabelled: CGFloat = 28
-        static let verticalTitleLength: CGFloat = 104
+        static let exposedLengthLabelled: CGFloat = 136
         static let hoverDepthIncrease: CGFloat = 6
         
         static let shadowRadiusActive: CGFloat = 9
@@ -36,8 +43,10 @@ enum DeckMetrics {
         static let shadowOpacityActive: Double = 0.30
         static let shadowOpacityIdle: Double = 0.20
         
-        static let expandedWidth: CGFloat = 260
-        static let expandedHeight: CGFloat = 180
+        static let previewWidth: CGFloat = 220
+        static let previewHeight: CGFloat = 160
+        static let previewSize = CGSize(width: previewWidth, height: previewHeight)
+        static let expansionTolerance: CGFloat = 2
         
         static let pinIndicatorSize: CGFloat = 6
         static let pinIndicatorPadding: CGFloat = 8
@@ -53,6 +62,7 @@ enum DeckMetrics {
         
         static let titleFontSize: CGFloat = 11
         static let titleTracking: CGFloat = 0.15
+        static let titleInset: CGFloat = 14
         
         static let contentPadding: CGFloat = 14
         static let bodyFontSize: CGFloat = 15

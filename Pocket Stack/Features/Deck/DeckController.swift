@@ -70,6 +70,7 @@ final class DeckController: NSObject {
     private var shrinkWork: DispatchWorkItem?
     private let transitionScheduler = DeckTransitionScheduler()
     private var tabFrames: [UUID: CGRect] = [:]
+    private var expandedTabIDs: Set<UUID> = []
     private var anchoredNoteIDs: Set<UUID> = []
     private var pendingOpenNoteIDs: Set<UUID> = []
     private var pendingState: DeckState?
@@ -97,6 +98,7 @@ final class DeckController: NSObject {
         transitionScheduler.cancelPending()
         pendingState = nil
         pendingOpenNoteIDs.removeAll()
+        expandedTabIDs.removeAll()
         shrinkWork?.cancel()
         restTransitionWork?.cancel()
         panel.orderOut(nil)
@@ -181,7 +183,7 @@ final class DeckController: NSObject {
         }
         ensureTabVisible(id)
         transition(.fan)
-        if let anchor = anchor(for: id), !isTabExpanded(tabFrames[id]) {
+        if let anchor = anchor(for: id), !expandedTabIDs.contains(id) {
             noteWindows.open(noteID: id, anchor: anchor)
         } else {
             pendingOpenNoteIDs.insert(id)
@@ -235,17 +237,25 @@ final class DeckController: NSObject {
     func noteTabFrameChanged(noteID: UUID, localFrame: CGRect?) {
         guard let localFrame else {
             tabFrames.removeValue(forKey: noteID)
+            expandedTabIDs.remove(noteID)
             return
         }
         guard let screen else { return }
         let converted = panel.convertToScreen(hosting.convert(localFrame, to: nil))
-        let frame = stableTabFrame(converted, on: screen)
-        guard tabFrames[noteID] != frame else { return }
-        tabFrames[noteID] = frame
+        let isExpanded = isTabExpanded(converted)
+        if isExpanded {
+            expandedTabIDs.insert(noteID)
+        } else {
+            expandedTabIDs.remove(noteID)
+        }
 
+        let frame = stableTabFrame(converted, on: screen)
         let anchor = NoteWindowAnchor(displayID: displayID, edge: preferences.edge, tabFrame: frame)
-        noteWindows.updateAnchors([noteID: anchor], displayID: displayID)
-        if pendingOpenNoteIDs.contains(noteID), !isTabExpanded(frame) {
+        if tabFrames[noteID] != frame {
+            tabFrames[noteID] = frame
+            noteWindows.updateAnchors([noteID: anchor], displayID: displayID)
+        }
+        if pendingOpenNoteIDs.contains(noteID), !isExpanded {
             pendingOpenNoteIDs.remove(noteID)
             noteWindows.open(noteID: noteID, anchor: anchor)
         }
@@ -328,15 +338,11 @@ final class DeckController: NSObject {
         }
     }
 
-    private func isTabExpanded(_ frame: CGRect?) -> Bool {
-        guard let frame else { return true }
-        let closedLength = preferences.style == .labelled
-            ? DeckMetrics.Tab.closedLengthLabelled
-            : DeckMetrics.Tab.closedLengthUnlabelled
-        switch preferences.edge {
-        case .left, .right: return frame.height > closedLength + 2
-        case .bottom: return frame.width > closedLength + 2
-        }
+    private func isTabExpanded(_ frame: CGRect) -> Bool {
+        let closedDepth = preferences.style == .labelled
+            ? DeckMetrics.Tab.closedDepthLabelled
+            : DeckMetrics.Tab.closedDepthUnlabelled
+        return preferences.edge.mainAxis.depth(of: frame.size) > closedDepth + DeckMetrics.Tab.expansionTolerance
     }
 
     private func transition(_ newState: DeckState) {
