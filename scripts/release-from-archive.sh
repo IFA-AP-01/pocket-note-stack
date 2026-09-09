@@ -4,14 +4,14 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Export, notarize, staple, package, and publish the latest Pocket Stack archive.
+Archive, export, notarize, staple, package, and publish Pocket Stack.
 
 Usage:
   scripts/release-from-archive.sh
 
 Options:
-  --archive PATH           Use a specific .xcarchive instead of the latest
-                           Pocket Stack archive in Xcode's Archives folder.
+  --archive PATH           Use an existing .xcarchive instead of creating a
+                           fresh Pocket Stack Release archive.
   --notary-profile NAME    notarytool Keychain profile. Defaults to
                            PocketStack-Notary.
   --tag TAG                GitHub Release tag. Defaults to v<marketing-version>.
@@ -23,8 +23,9 @@ Options:
   --help                   Show this help.
 
 Release notes are always read from .github/RELEASE_NOTES.md. GitHub Actions
-creates the matching draft Release after a successful build. This script adds
-the signed update archive, publishes the Sparkle files to R2, and publishes the
+creates the matching draft Release after a successful build. Unless --archive
+is provided, this script first creates a fresh Release archive. It then adds the
+signed update archive, publishes the Sparkle files to R2, and publishes the
 GitHub Release.
 
 No Apple or Sparkle private key is accepted as a command-line argument.
@@ -128,9 +129,20 @@ working_tree_status=$(/usr/bin/git -C "$repo_root" status --porcelain --untracke
 [[ -z "$working_tree_status" ]] || fail "the Git working tree must be clean before publishing a release"
 
 if [[ -z "$archive_path" ]]; then
-    archive_candidates=("${HOME}"/Library/Developer/Xcode/Archives/*/"Pocket Stack"*.xcarchive(Nom))
-    [[ ${#archive_candidates[@]} -gt 0 ]] || fail "no Pocket Stack archive was found in Xcode Archives"
-    archive_path="${archive_candidates[1]}"
+    archive_directory="${repo_root}/build/archives"
+    archive_timestamp=$(/bin/date '+%Y%m%d-%H%M%S')
+    archive_path="${archive_directory}/Pocket Stack-${archive_timestamp}.xcarchive"
+
+    /bin/mkdir -p "$archive_directory"
+    echo "Creating a fresh Pocket Stack Release archive..."
+    /usr/bin/xcodebuild \
+        -project "${repo_root}/Pocket Stack.xcodeproj" \
+        -scheme "Pocket Stack" \
+        -configuration Release \
+        -destination "generic/platform=macOS" \
+        -archivePath "$archive_path" \
+        -allowProvisioningUpdates \
+        archive
 fi
 
 [[ -d "$archive_path" && "$archive_path" == *.xcarchive ]] || fail "--archive must point to an .xcarchive"
