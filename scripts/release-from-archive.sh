@@ -199,25 +199,6 @@ build_version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundl
 [[ -n "$short_version" ]] || fail "the archive does not contain a marketing version"
 [[ -n "$build_version" ]] || fail "the archive does not contain a build version"
 
-dmg_signing_identity_output=$(
-    /usr/bin/security find-identity -v -p codesigning 2>/dev/null \
-        | /usr/bin/awk -v team_id="$team_id" '
-            index($0, "\"Developer ID Application:") && index($0, "(" team_id ")") {
-                identity = $0
-                sub(/^[^"]*"/, "", identity)
-                sub(/"[^"]*$/, "", identity)
-                print identity
-            }
-        '
-)
-[[ -n "$dmg_signing_identity_output" ]] \
-    || fail "no Developer ID Application certificate for Team ${team_id} was found in the Keychain"
-dmg_signing_identities=("${(@f)dmg_signing_identity_output}")
-if (( ${#dmg_signing_identities[@]} > 1 )); then
-    fail "multiple Developer ID Application certificates for Team ${team_id} were found in the Keychain"
-fi
-dmg_signing_identity="${dmg_signing_identities[1]}"
-
 release_notes_title=$(/usr/bin/sed -n '/[^[:space:]]/{p;q;}' "$release_notes_path")
 [[ "$release_notes_title" == "# Pocket Stack ${short_version}" ]] \
     || fail ".github/RELEASE_NOTES.md must start with '# Pocket Stack ${short_version}'"
@@ -333,6 +314,25 @@ fi
 echo "Verifying the final app..."
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$exported_app_path"
 /usr/bin/xcrun stapler validate "$exported_app_path"
+
+dmg_signing_identity_output=$(
+    /usr/bin/security find-identity -v -p codesigning 2>/dev/null \
+        | /usr/bin/awk -v team_id="$team_id" '
+            index($0, "\"Developer ID Application:") && index($0, "(" team_id ")") {
+                identity = $0
+                sub(/^[^"]*"/, "", identity)
+                sub(/"[^"]*$/, "", identity)
+                print identity
+            }
+        '
+)
+[[ -n "$dmg_signing_identity_output" ]] \
+    || fail "no Developer ID Application certificate for Team ${team_id} was found after exporting the app; create or import one in Xcode > Settings > Accounts > Manage Certificates"
+dmg_signing_identities=("${(@f)dmg_signing_identity_output}")
+if (( ${#dmg_signing_identities[@]} > 1 )); then
+    fail "multiple Developer ID Application certificates for Team ${team_id} were found in the Keychain"
+fi
+dmg_signing_identity="${dmg_signing_identities[1]}"
 
 dmg_name="Pocket-Stack-${short_version}.dmg"
 dmg_output_path="${export_dir}/${dmg_name}"
