@@ -1,5 +1,6 @@
 import Sparkle
 import UserNotifications
+import Combine
 
 @MainActor
 final class UpdateCoordinator: NSObject, ObservableObject {
