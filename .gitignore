@@ -149,3 +149,4 @@ Pods/
 /Gemfile.lock
 /enterprise/register/Gemfile.lock
 Config/Environment.xcconfig
+Config/*.p8

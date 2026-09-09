@@ -12,8 +12,6 @@ Usage:
 Options:
   --archive PATH           Use an existing .xcarchive instead of creating a
                            fresh Pocket Stack Release archive.
-  --notary-profile NAME    notarytool Keychain profile. Defaults to
-                           PocketStack-Notary.
   --tag TAG                GitHub Release tag. Defaults to v<marketing-version>.
   --archives-dir PATH      Sparkle archive history directory. Defaults to
                            ./build/sparkle-releases.
@@ -28,8 +26,10 @@ is provided, this script first creates a fresh Release archive. It then adds the
 signed update archive, publishes the Sparkle files to R2, and publishes the
 GitHub Release.
 
-No Apple or Sparkle private key is accepted as a command-line argument.
-Apple notarization credentials and the Sparkle EdDSA key are read from Keychain.
+Apple notarization reads POCKET_STACK_NOTARY_ISSUER_ID,
+POCKET_STACK_NOTARY_KEY_ID, and POCKET_STACK_NOTARY_KEY_PATH from
+Config/Environment.xcconfig. Shell environment variables with the same names
+override those values. The Sparkle EdDSA private key is read from Keychain.
 EOF
 }
 
@@ -39,7 +39,6 @@ fail() {
 }
 
 archive_path=""
-notary_profile="PocketStack-Notary"
 release_tag=""
 archives_dir="./build/sparkle-releases"
 export_root="./build/export"
@@ -48,18 +47,37 @@ keychain_account="ed25519"
 script_dir="${0:A:h}"
 repo_root="${script_dir:h}"
 release_notes_path="${repo_root}/.github/RELEASE_NOTES.md"
+environment_config_path="${repo_root}/Config/Environment.xcconfig"
 r2_bucket="pocketstack-downloads"
+
+read_xcconfig_value() {
+    local setting_name="$1"
+    /usr/bin/awk -v setting_name="$setting_name" '
+        index($0, "=") {
+            name = substr($0, 1, index($0, "=") - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+            if (name == setting_name) {
+                value = substr($0, index($0, "=") + 1)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                result = value
+            }
+        }
+        END { print result }
+    ' "$environment_config_path" 2>/dev/null
+}
+
+notary_issuer_id="${POCKET_STACK_NOTARY_ISSUER_ID:-$(read_xcconfig_value POCKET_STACK_NOTARY_ISSUER_ID)}"
+notary_key_id="${POCKET_STACK_NOTARY_KEY_ID:-$(read_xcconfig_value POCKET_STACK_NOTARY_KEY_ID)}"
+notary_key_path="${POCKET_STACK_NOTARY_KEY_PATH:-$(read_xcconfig_value POCKET_STACK_NOTARY_KEY_PATH)}"
+if [[ -n "$notary_key_path" && "$notary_key_path" != /* ]]; then
+    notary_key_path="${repo_root}/${notary_key_path}"
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --archive)
             [[ $# -ge 2 ]] || fail "--archive requires a path"
             archive_path="$2"
-            shift 2
-            ;;
-        --notary-profile)
-            [[ $# -ge 2 ]] || fail "--notary-profile requires a name"
-            notary_profile="$2"
             shift 2
             ;;
         --tag)
@@ -230,6 +248,13 @@ if [[ -n "$accepted_submission_app" ]]; then
     /bin/mkdir -p "$export_dir"
     /usr/bin/ditto "$accepted_submission_app" "$exported_app_path"
 else
+    [[ -n "$notary_issuer_id" && "$notary_issuer_id" != YOUR_ISSUER_ID ]] \
+        || fail "set POCKET_STACK_NOTARY_ISSUER_ID in Config/Environment.xcconfig"
+    [[ -n "$notary_key_id" && "$notary_key_id" != YOUR_KEY_ID ]] \
+        || fail "set POCKET_STACK_NOTARY_KEY_ID in Config/Environment.xcconfig"
+    [[ -f "$notary_key_path" && "$notary_key_path" == *.p8 ]] \
+        || fail "POCKET_STACK_NOTARY_KEY_PATH must point to an existing .p8 file"
+
     /usr/bin/plutil -create xml1 "$export_options_path"
     /usr/bin/plutil -insert method -string developer-id "$export_options_path"
     /usr/bin/plutil -insert destination -string export "$export_options_path"
@@ -254,7 +279,9 @@ else
     echo "Submitting the exported app to Apple's notary service..."
     notarization_result_path="${temporary_dir}/notarization-result.plist"
     /usr/bin/xcrun notarytool submit "$notarization_zip_path" \
-        --keychain-profile "$notary_profile" \
+        --issuer "$notary_issuer_id" \
+        --key-id "$notary_key_id" \
+        --key "$notary_key_path" \
         --wait \
         --timeout 1h \
         --output-format plist > "$notarization_result_path"
