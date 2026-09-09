@@ -28,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		6C7A000130D0000000000001 /* Environment.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Environment.xcconfig; sourceTree = "<group>"; };
 		6C64B4FC30467589003B51BA /* Pocket Stack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pocket Stack.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C64B50B3046758A003B51BA /* Pocket StackTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Pocket StackTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C64B5153046758A003B51BA /* Pocket StackUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Pocket StackUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -94,6 +95,7 @@
 		6C64B4F330467589003B51BA = {
 			isa = PBXGroup;
 			children = (
+				6C7A000130D0000000000001 /* Environment.xcconfig */,
 				6C64B4FE30467589003B51BA /* Pocket Stack */,
 				6C64B50E3046758A003B51BA /* Pocket StackTests */,
 				6C64B5183046758A003B51BA /* Pocket StackUITests */,
@@ -295,6 +297,7 @@
 /* Begin XCBuildConfiguration section */
 		6C64B51D3046758A003B51BA /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 6C7A000130D0000000000001 /* Environment.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -328,7 +331,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -359,6 +362,7 @@
 		};
 		6C64B51E3046758A003B51BA /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 6C7A000130D0000000000001 /* Environment.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -392,7 +396,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -423,7 +427,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -463,7 +467,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -499,7 +503,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
@@ -520,7 +524,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
@@ -540,7 +544,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ifateam.Pocket-StackUITests";
@@ -559,7 +563,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 43W6X55RFR;
+				DEVELOPMENT_TEAM = "$(POCKET_STACK_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ifateam.Pocket-StackUITests";

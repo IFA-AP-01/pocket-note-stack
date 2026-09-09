@@ -4,19 +4,79 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  verify:
     runs-on: macos-15
+    outputs:
+      version: ${{ steps.app-version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Pocket Stack
+      - name: Read app version
+        id: app-version
         run: |
-          xcodebuild \
+          version=$(xcodebuild \
             -project "Pocket Stack.xcodeproj" \
             -scheme "Pocket Stack" \
-            -configuration Debug \
-            -destination "platform=macOS" \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+            -configuration Release \
+            -showBuildSettings \
+            -json | /usr/bin/plutil -extract '0.buildSettings.MARKETING_VERSION' raw -)
+          [[ "$version" =~ ^[0-9A-Za-z][0-9A-Za-z.-]*$ ]] || {
+            echo "Invalid app version: $version" >&2
+            exit 1
+          }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  release-notes:
+    name: Prepare GitHub Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          notes_path=".github/RELEASE_NOTES.md"
+          [[ -f "$notes_path" ]] || {
+            echo "$notes_path is missing" >&2
+            exit 1
+          }
+
+          expected_title="# Pocket Stack $APP_VERSION"
+          actual_title=$(sed -n '/[^[:space:]]/{p;q;}' "$notes_path")
+          [[ "$actual_title" == "$expected_title" ]] || {
+            echo "$notes_path must start with '$expected_title'" >&2
+            exit 1
+          }
+
+          tag="v$APP_VERSION"
+          if is_draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$is_draft" == "true" ]]; then
+              gh release edit "$tag" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "Pocket Stack $APP_VERSION" \
+                --notes-file "$notes_path"
+              echo "Updated draft release $tag"
+            else
+              echo "Release $tag is already published; nothing to change"
+            fi
+          else
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Pocket Stack $APP_VERSION" \
+              --notes-file "$notes_path" \
+              --draft
+            echo "Created draft release $tag"
+          fi

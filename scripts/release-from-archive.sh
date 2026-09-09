@@ -22,8 +22,10 @@ Options:
   --keychain-account NAME  Sparkle EdDSA Keychain account. Defaults to ed25519.
   --help                   Show this help.
 
-Release notes are always read from .github/RELEASE_NOTES.md. After the signed
-update and appcast are uploaded to R2, the same notes create a GitHub Release.
+Release notes are always read from .github/RELEASE_NOTES.md. GitHub Actions
+creates the matching draft Release after a successful build. This script adds
+the signed update archive, publishes the Sparkle files to R2, and publishes the
+GitHub Release.
 
 No Apple or Sparkle private key is accepted as a command-line argument.
 Apple notarization credentials and the Sparkle EdDSA key are read from Keychain.
@@ -46,7 +48,6 @@ script_dir="${0:A:h}"
 repo_root="${script_dir:h}"
 release_notes_path="${repo_root}/.github/RELEASE_NOTES.md"
 r2_bucket="pocketstack-downloads"
-public_base_url="https://pocketupdates.ifateam.dev"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -159,6 +160,7 @@ feed_url=$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$archived_info_path" 2
 public_ed_key=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$archived_info_path" 2>/dev/null || true)
 [[ "$feed_url" == https://* ]] || fail "the archived app has no HTTPS SUFeedURL; configure it and create a new archive"
 [[ -n "$public_ed_key" ]] || fail "the archived app has no SUPublicEDKey"
+public_base_url="${feed_url%/*}"
 
 if [[ -z "$release_tag" ]]; then
     release_tag="v${short_version}"
@@ -168,8 +170,16 @@ echo "Checking GitHub release prerequisites..."
 "$gh_path" auth status --hostname github.com >/dev/null
 head_revision=$(/usr/bin/git -C "$repo_root" rev-parse HEAD)
 "$gh_path" api "repos/${github_repository}/commits/${head_revision}" >/dev/null
-if "$gh_path" release view "$release_tag" --repo "$github_repository" >/dev/null 2>&1; then
-    fail "GitHub Release already exists: ${release_tag}"
+if ! release_is_draft=$("$gh_path" release view "$release_tag" \
+    --repo "$github_repository" \
+    --json isDraft \
+    --jq .isDraft 2>/dev/null); then
+    fail "GitHub Release ${release_tag} does not exist; push the version first and wait for Verify"
+fi
+if [[ "$release_is_draft" == "true" ]]; then
+    echo "Found draft GitHub Release ${release_tag}."
+else
+    echo "Found published GitHub Release ${release_tag}."
 fi
 
 export_dir="${export_root}/${short_version}-${build_version}"
@@ -275,6 +285,10 @@ archive_object_key="releases/${archive_name}"
 [[ -f "$appcast_output_path" ]] || fail "appcast.xml was not created at ${appcast_output_path}"
 
 echo
+echo "Uploading the signed archive to GitHub Release ${release_tag}..."
+"$gh_path" release upload "$release_tag" "$archive_output_path" \
+    --repo "$github_repository"
+
 echo "Uploading the immutable update archive to Cloudflare R2..."
 "$wrangler_path" r2 object put "${r2_bucket}/${archive_object_key}" \
     --file "$archive_output_path" \
@@ -289,12 +303,12 @@ echo "Publishing appcast.xml to Cloudflare R2..."
     --cache-control "no-cache, no-store, must-revalidate" \
     --remote
 
-echo "Creating GitHub Release from .github/RELEASE_NOTES.md..."
-"$gh_path" release create "$release_tag" \
+echo "Updating and publishing GitHub Release ${release_tag}..."
+"$gh_path" release edit "$release_tag" \
     --repo "$github_repository" \
-    --target "$head_revision" \
     --title "Pocket Stack ${short_version}" \
     --notes-file "$release_notes_path" \
+    --draft=false \
     --latest
 
 echo

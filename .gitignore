@@ -138,6 +138,7 @@ playground.xcworkspace
 /*.gcno
 *.xcworkspacedata
 *.xcuserdata
+/xcuserdata
 
 ## Cocoapods ##
 Pods/
@@ -146,3 +147,4 @@ Pods/
 /fastlane/fastlane/Appfile
 /Gemfile.lock
 /enterprise/register/Gemfile.lock
+Config/Environment.xcconfig

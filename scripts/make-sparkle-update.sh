@@ -10,7 +10,7 @@ Usage:
   scripts/make-sparkle-update.sh \
     --app "./build/export/Pocket Stack.app" \
     --archives-dir "./build/sparkle-releases" \
-    --download-url-prefix "https://pocketupdates.ifateam.dev/releases/" \
+    --download-url-prefix "$POCKET_STACK_UPDATE_BASE_URL/releases/" \
     --release-notes "./.github/RELEASE_NOTES.md"
 
 Options:
