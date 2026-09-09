@@ -10,8 +10,8 @@ Usage:
   scripts/make-sparkle-update.sh \
     --app "./build/export/Pocket Stack.app" \
     --archives-dir "./build/sparkle-releases" \
-    --download-url-prefix "https://github.com/OWNER/REPO/releases/download/v1.2.0/" \
-    --release-notes "./RELEASE_NOTES.md"
+    --download-url-prefix "https://pocketupdates.ifateam.dev/releases/" \
+    --release-notes "./.github/RELEASE_NOTES.md"
 
 Options:
   --generate-appcast PATH  Path to Sparkle's generate_appcast tool. If omitted,
@@ -152,7 +152,8 @@ echo "Signing the archive and generating appcast.xml using Login Keychain..."
     --account "$keychain_account" \
     --download-url-prefix "$download_url_prefix" \
     --embed-release-notes \
-    -o appcast.xml \
+    --maximum-deltas 0 \
+    -o "${archives_dir}/appcast.xml" \
     "$archives_dir"
 
 echo
@@ -160,5 +161,5 @@ echo "Sparkle update created:"
 echo "  Archive: ${archive_path}"
 echo "  Appcast: ${archives_dir}/appcast.xml"
 echo
-echo "Upload ${archive_name} to the GitHub Release matching this URL prefix,"
-echo "then publish appcast.xml at the stable HTTPS URL configured as SUFeedURL."
+echo "Upload ${archive_name} to the configured download URL, then publish"
+echo "appcast.xml at the stable HTTPS URL configured as SUFeedURL."

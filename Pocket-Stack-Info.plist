@@ -8,6 +8,8 @@
 	<false/>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://pocketupdates.ifateam.dev/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>yWJsKZNMGwbVOKGDXw2HwpS0CLw4i5boxfaCqmgc5Nw=</string>
 	<key>SUScheduledCheckInterval</key>
