@@ -119,10 +119,8 @@ extension DeckEdge {
 
     var stackOrder: DeckStackOrder {
         switch self {
-        case .left, .bottom:
+        case .left, .bottom, .right:
             .higherIndexOnTop
-        case .right:
-            .lowerIndexOnTop
         }
     }
 
@@ -132,12 +130,18 @@ extension DeckEdge {
 
     var titleRotation: Angle {
         switch self {
-        case .left:
+        case .left, .right:
             .degrees(90)
-        case .right:
-            .degrees(-90)
         case .bottom:
             .zero
+        }
+    }
+
+    var cardSpineAlignment: Alignment {
+        switch self {
+        case .left: .trailing
+        case .right: .leading
+        case .bottom: .top
         }
     }
 
@@ -201,6 +205,13 @@ extension DeckEdge {
         case .left: .topTrailing
         case .right: .topLeading
         case .bottom: .topTrailing
+        }
+    }
+
+    var tabSlant: CGFloat {
+        switch self {
+        case .right, .left: 4.0
+        case .bottom: 0.0
         }
     }
 

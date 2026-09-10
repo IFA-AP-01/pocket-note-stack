@@ -17,15 +17,27 @@ enum DeckMetrics {
     }
 
     enum Fan {
+        static func crossAxisSize(on axis: DeckMainAxis) -> CGFloat {
+            Tab.closedDepthLabelled(on: axis)
+        }
         static let crossAxisSize: CGFloat = 36
-        static let layoutSpacing: CGFloat = 10
+        static let layoutSpacing: CGFloat = 8
+        static func tabSpacingLabelled(on axis: DeckMainAxis) -> CGFloat {
+            Tab.exposedLengthLabelled(on: axis) - Tab.closedLengthLabelled(on: axis)
+        }
         static var tabSpacingLabelled: CGFloat {
-            Tab.exposedLengthLabelled - Tab.closedLengthLabelled(on: .horizontal)
+            Tab.exposedLengthLabelled(on: .horizontal) - Tab.closedLengthLabelled(on: .horizontal)
         }
         static let tabSpacingUnlabelled: CGFloat = 6
     }
 
     enum Tab {
+        static func closedDepthLabelled(on axis: DeckMainAxis) -> CGFloat {
+            switch axis {
+            case .horizontal: 36
+            case .vertical: 36
+            }
+        }
         static let closedDepthLabelled: CGFloat = 36
         static let closedDepthUnlabelled: CGFloat = 20
         static func closedLengthLabelled(on axis: DeckMainAxis) -> CGFloat {
@@ -35,15 +47,27 @@ enum DeckMetrics {
             }
         }
         static let closedLengthUnlabelled: CGFloat = 28
-        static let exposedLengthLabelled: CGFloat = 136
-        static let hoverDepthIncrease: CGFloat = 6
+        static func exposedLengthLabelled(on axis: DeckMainAxis) -> CGFloat {
+            switch axis {
+            case .horizontal: 160
+            case .vertical: 80
+            }
+        }
+        static let exposedLengthLabelled: CGFloat = 80
+        static let hoverDepthIncrease: CGFloat = 0
         
-        static let shadowRadiusActive: CGFloat = 9
-        static let shadowRadiusIdle: CGFloat = 5
-        static let shadowOpacityActive: Double = 0.30
-        static let shadowOpacityIdle: Double = 0.20
+        static let shadowRadiusActive: CGFloat = 8
+        static let shadowRadiusIdle: CGFloat = 4
+        static let shadowOpacityActive: Double = 0.25
+        static let shadowOpacityIdle: Double = 0.16
         
-        static let previewWidth: CGFloat = 220
+        static func previewSize(on axis: DeckMainAxis) -> CGSize {
+            switch axis {
+            case .horizontal: CGSize(width: 220, height: 160)
+            case .vertical: CGSize(width: 240, height: 160)
+            }
+        }
+        static let previewWidth: CGFloat = 240
         static let previewHeight: CGFloat = 160
         static let previewSize = CGSize(width: previewWidth, height: previewHeight)
         static let expansionTolerance: CGFloat = 2
@@ -51,7 +75,7 @@ enum DeckMetrics {
         static let pinIndicatorSize: CGFloat = 6
         static let pinIndicatorPadding: CGFloat = 8
         
-        static let cornerRadius: CGFloat = 11
+        static let cornerRadius: CGFloat = 14
         static let borderLineWidth: CGFloat = 2
         
         static let closedContentThickness: CGFloat = 10
@@ -60,12 +84,12 @@ enum DeckMetrics {
         
         static let previewStripThickness: CGFloat = 12
         
-        static let titleFontSize: CGFloat = 11
-        static let titleTracking: CGFloat = 0.15
-        static let titleInset: CGFloat = 14
+        static let titleFontSize: CGFloat = 10.5
+        static let titleTracking: CGFloat = 1.2
+        static let titleInset: CGFloat = 4
         
         static let contentPadding: CGFloat = 14
-        static let bodyFontSize: CGFloat = 15
+        static let bodyFontSize: CGFloat = 13
         static let bodyLineSpacing: CGFloat = 2
         static let bodyLineLimit = 6
     }

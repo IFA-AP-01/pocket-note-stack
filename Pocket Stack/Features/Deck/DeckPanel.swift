@@ -63,6 +63,33 @@ final class DeckPanel: NSPanel {
 final class DeckTrackingView: NSView {
     weak var controller: DeckController?
 
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateLayerScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateLayerScale()
+    }
+
+    private func updateLayerScale() {
+        guard let window = window else { return }
+        layer?.contentsScale = window.backingScaleFactor
+    }
+
     override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(bounds, cursor: .arrow)
@@ -85,9 +112,28 @@ final class DeckTrackingView: NSView {
 }
 
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
-    required init(rootView: Content) { super.init(rootView: rootView) }
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateLayerScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateLayerScale()
+    }
+
+    private func updateLayerScale() {
+        guard let window = window else { return }
+        layer?.contentsScale = window.backingScaleFactor
+    }
 
     override func resetCursorRects() {
         super.resetCursorRects()

@@ -70,12 +70,11 @@ enum DeckLayout {
             return NSRect(x: x, y: visibleFrame.midY - height / 2, width: width, height: height)
 
         case (.fan, .bottom), (.expanded, .bottom):
-            let width = min(visibleFrame.width, max(noteSize.width + Metrics.expandedPadding, Metrics.minExpandedWidth))
             let height = min(visibleFrame.height, noteSize.height + Metrics.expandedPadding)
             return NSRect(
-                x: clampedCenterOrigin(center: visibleFrame.midX, length: width, bounds: visibleFrame.minX...visibleFrame.maxX),
+                x: visibleFrame.minX,
                 y: visibleFrame.minY,
-                width: width,
+                width: visibleFrame.width,
                 height: height
             )
 

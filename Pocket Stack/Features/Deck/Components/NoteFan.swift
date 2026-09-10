@@ -65,8 +65,8 @@ struct NoteFan: View {
             lastMouseTime = now
         }
         .frame(
-            width: edge == .bottom ? nil : DeckMetrics.Fan.crossAxisSize,
-            height: edge == .bottom ? DeckMetrics.Fan.crossAxisSize : nil,
+            width: edge == .bottom ? nil : DeckMetrics.Fan.crossAxisSize(on: edge.mainAxis),
+            height: edge == .bottom ? DeckMetrics.Fan.crossAxisSize(on: edge.mainAxis) : nil,
             alignment: edge.rootAlignment
         )
         .onAppear { revealed = true }
@@ -93,7 +93,7 @@ struct NoteFan: View {
     private var tabs: some View {
         (edge.stackLayout(
             spacing: style == .labelled
-                ? DeckMetrics.Fan.tabSpacingLabelled
+                ? DeckMetrics.Fan.tabSpacingLabelled(on: edge.mainAxis)
                 : DeckMetrics.Fan.tabSpacingUnlabelled
         )) {
             if notes.isEmpty {
@@ -138,34 +138,14 @@ struct NoteFan: View {
         if inside {
             onInteractionChange(true)
             hoverTask?.cancel()
-            withAnimation(.easeOut(duration: DeckMetrics.Animation.hoverDuration)) {
+            hoverTask = nil
+            withAnimation(.spring(response: DeckMetrics.Animation.expandSpringResponse, dampingFraction: DeckMetrics.Animation.expandSpringDamping)) {
                 hoveredID = note.id
-                previewedID = nil
+                previewedID = note.id
             }
+
+            guard openOnHover else { return }
             hoverTask = Task { @MainActor in
-                let enterTime = Date()
-                while true {
-                    let now = Date()
-                    let timeSinceEnter = now.timeIntervalSince(enterTime)
-                    let timeSinceLastMove = now.timeIntervalSince(lastMouseTime)
-                    
-                    let effectiveVelocity = timeSinceLastMove > 0.1 ? 0 : mouseVelocity
-                    
-                    if timeSinceEnter >= DeckMetrics.Animation.hoverPreviewDelay {
-                        if effectiveVelocity <= DeckMetrics.Animation.hoverVelocityThreshold {
-                            break
-                        }
-                    }
-                    
-                    try? await Task.sleep(nanoseconds: 30_000_000)
-                    guard !Task.isCancelled, hoveredID == note.id else { return }
-                }
-
-                withAnimation(.easeOut(duration: 0.25)) {
-                    previewedID = note.id
-                }
-
-                guard openOnHover else { return }
                 try? await Task.sleep(nanoseconds: UInt64(DeckMetrics.Animation.hoverOpenDelay * 1_000_000_000))
                 guard !Task.isCancelled, hoveredID == note.id, previewedID == note.id else { return }
                 open(note.id)
@@ -188,7 +168,7 @@ struct NoteFan: View {
     private func cancelHover() {
         hoverTask?.cancel()
         hoverTask = nil
-        withAnimation(.easeOut(duration: DeckMetrics.Animation.hoverDuration)) {
+        withAnimation(.spring(response: DeckMetrics.Animation.expandSpringResponse, dampingFraction: DeckMetrics.Animation.expandSpringDamping)) {
             hoveredID = nil
             previewedID = nil
         }

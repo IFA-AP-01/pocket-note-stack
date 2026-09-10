@@ -66,12 +66,12 @@ struct AddNoteButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "plus")
-                .font(.system(size: DeckMetrics.AddButton.iconSize, weight: .semibold))
-                .foregroundStyle(.white.opacity(DeckMetrics.AddButton.iconOpacity))
+                .font(.system(size: DeckMetrics.AddButton.iconSize, weight: .bold))
+                .foregroundStyle(Color.black.opacity(0.65))
                 .frame(width: DeckMetrics.AddButton.size, height: DeckMetrics.AddButton.size)
-                .background(Circle().fill(Color.black.opacity(DeckMetrics.AddButton.backgroundOpacity)))
+                .background(Circle().fill(Color.white.opacity(0.92)))
                 .scaleEffect(hovering ? DeckMetrics.AddButton.hoverScale : 1)
-                .shadow(color: .black.opacity(0.24), radius: DeckMetrics.AddButton.shadowRadius, y: DeckMetrics.AddButton.shadowY)
+                .shadow(color: .black.opacity(0.20), radius: DeckMetrics.AddButton.shadowRadius, y: DeckMetrics.AddButton.shadowY)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
